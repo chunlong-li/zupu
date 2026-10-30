@@ -1,0 +1,40 @@
+services:
+  familytree:
+    build:
+      context: .
+      args:
+        # 如需强制重建，修改此数字即可破坏 Docker 缓存
+        CACHEBUST: 4
+    container_name: familytree
+    restart: unless-stopped
+    # 让容器内能通过 host.docker.internal 访问宿主机（本地 AI 模型服务 llama-server 在宿主机 18110）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${FAMILY_TREE_PORT:-8080}:8080"
+    environment:
+      - FAMILY_TREE_DATA_DIR=/data
+      - FAMILY_TREE_PORT=${FAMILY_TREE_PORT:-8080}
+      - FAMILY_TREE_TIMEZONE=Asia/Shanghai
+      - FAMILY_TREE_ADMIN_USER=${FAMILY_TREE_ADMIN_USER:-admin}
+      - FAMILY_TREE_ADMIN_PASS=${FAMILY_TREE_ADMIN_PASS:-admin123}
+      - FAMILY_TREE_MAX_UPLOAD_MB=${FAMILY_TREE_MAX_UPLOAD_MB:-100}
+      - FAMILY_TREE_ENABLE_UPDATE=true
+      - FAMILY_TREE_APP_DIR=/data/runtime
+      - FAMILY_TREE_WEB_DIR=/data/runtime/web
+      # 宿主机更新包目录路径（仅用于前端提示“保存到哪个目录”，不会影响挂载）
+      - FAMILY_TREE_UPDATE_DIR_HOST=${FAMILY_TREE_UPDATE_DIR_HOST:-../up/zupu}
+      # 在线更新源（latest.json 清单地址），留空则禁用“在线更新”按钮
+      - FAMILY_TREE_UPDATE_URL=https://zupu-update.lijiacore.com:4440/latest.json
+      # 跳过更新源 TLS 证书校验（自签名证书场景）
+      - FAMILY_TREE_UPDATE_INSECURE=true
+    volumes:
+      - ./data:/data
+      # 挂载飞牛更新包目录（只读），供“从服务器文件更新”功能直接读取，无需下载再上传（相对路径：与项目同级的 up/zupu）
+      - ../up/zupu:/data/updates:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
