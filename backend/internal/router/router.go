@@ -21,20 +21,16 @@ func Setup(cfg *config.Config, db *sql.DB, scheduler *backup.Scheduler) *gin.Eng
 	// 在线更新包可能较大，放宽 multipart 内存缓存到 512MB（超过则落临时文件）
 	r.MaxMultipartMemory = 512 << 20
 
-	// 静态资源：优先读更新包部署的 /data/runtime/web，其次 /data/web（手动部署），最后内置 ./web
-	webDir := cfg.WebDir
-	if webDir == "" {
-		webDir = "./web"
+	// 静态资源：优先读配置目录（更新包部署的 /data/runtime/web），
+	// 其次内置前端 ./web（镜像里的 /app/web），再退 /data/runtime/web、/data/web（手动部署）
+	webDir, webOK := resolveWebDir(cfg.WebDir)
+	if webOK {
+		log.Printf("[web] root=%s", webDir)
+	} else {
+		// 空目录 ≠ 可用目录：新装容器数据卷是空的，却把 FAMILY_TREE_WEB_DIR 指过去，
+		// 表现就是首页/所有路由 404（只有 /health 正常，健康检查还显示"良好"）。
+		log.Printf("[web] ⚠ 未找到 index.html：root=%s（首页会 404；请检查数据卷里的 runtime/web，或把 FAMILY_TREE_WEB_DIR 指到含 index.html 的目录）", webDir)
 	}
-	if stat, err := os.Stat(webDir); err != nil || !stat.IsDir() {
-		// 兼容旧部署路径；安装包通过 FAMILY_TREE_WEB_DIR 指向 ${TRIM_APPDEST}/web
-		if stat, err := os.Stat("/data/runtime/web"); err == nil && stat.IsDir() {
-			webDir = "/data/runtime/web"
-		} else if stat, err := os.Stat("/data/web"); err == nil && stat.IsDir() {
-			webDir = "/data/web"
-		}
-	}
-	log.Printf("[web] root=%s", webDir)
 	// 静态资源缓存策略（治「更新后浏览器还在跑旧代码」）：
 	//   /assets/*：Vite 产物文件名自带内容哈希 → 可长期强缓存
 	//   index.html：必须每次回源校验，否则更新后浏览器仍用旧 HTML 里的旧 chunk
@@ -478,4 +474,64 @@ func Setup(cfg *config.Config, db *sql.DB, scheduler *backup.Scheduler) *gin.Eng
 	})
 
 	return r
+}
+
+// resolveWebDir 选出"真正可用"的前端目录。
+// 坑：只看「目录是否存在」会把空目录（例如全新数据卷里的 /data/runtime/web）当成有效目录，
+// 于是首页 c.File(webDir/index.html) 全部 404，而 /health 仍 200（健康检查照样显示正常）。
+// 规则：按候选顺序取第一个**含 index.html** 的目录；都没有则退到第一个存在的目录；
+// 再没有就原样返回配置值，让调用方把问题打进日志。
+func resolveWebDir(configured string) (string, bool) {
+	cands := make([]string, 0, 6)
+	if configured != "" {
+		cands = append(cands, configured)
+	}
+	// ./web 是镜像内置前端（Dockerfile: COPY web /app/web），
+	// exeDir/web 覆盖「工作目录不是程序目录」的部署，/data/* 兼容历史部署
+	cands = append(cands,
+		"./web",
+		filepath.Join(exeDir(), "web"),
+		"/data/runtime/web",
+		"/data/web",
+	)
+
+	seen := make(map[string]bool, len(cands))
+	fallback := ""
+	for _, c := range cands {
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		st, err := os.Stat(c)
+		if err != nil || !st.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(c, "index.html")); err == nil {
+			return c, true
+		}
+		if fallback == "" {
+			fallback = c
+		}
+	}
+	if fallback != "" {
+		return fallback, false
+	}
+	if configured != "" {
+		return configured, false
+	}
+	return "./web", false
+}
+
+// exeDir 返回可执行文件所在目录（解软链接）；拿不到时退回当前工作目录
+func exeDir() string {
+	if exe, err := os.Executable(); err == nil {
+		if p, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = p
+		}
+		return filepath.Dir(exe)
+	}
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return "."
 }

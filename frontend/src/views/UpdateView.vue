@@ -161,6 +161,24 @@
     <el-card class="section update-log">
       <template #header><span>版本更新日志</span></template>
       <el-collapse v-model="activeLogs">
+                                      <el-collapse-item name="logStable1310">
+            <template #title>
+              <span class="log-title">v1.3.10</span>
+              <span class="log-count">2026-11-01 发布</span>
+            </template>
+            <div class="log-entry">
+              <div class="log-entry-head">
+                <span class="log-ver">v1.3.10</span>
+                <span class="log-date">2026-11-01</span>
+              </div>
+              <div class="log-entry-body">
+                <p><b>Docker 全新部署白屏修正（重要）：</b></p>
+                <p>· 修正<b>全新安装后打开页面显示 404、只有健康检查正常</b>（容器明明"运行中"却进不去）的问题：此前程序只判断"前端目录是否存在"，而新装数据卷里的 <b>runtime/web</b> 是空目录，被误当成有效目录，首页取不到 <b>index.html</b> 就返回 404。</p>
+                <p>· 现改为<b>按"目录里确实有 index.html"来挑选前端目录</b>，依次回退到内置前端；都不存在时启动日志会明确报出告警，便于排查。</p>
+                <p>· 影响面：飞牛套件安装不受影响；已做过在线更新的实例不受影响。</p>
+              </div>
+            </div>
+          </el-collapse-item>
                                       <el-collapse-item name="logStable139">
             <template #title>
               <span class="log-title">v1.3.9</span>
@@ -1860,7 +1878,7 @@ function compareVersion(a, b) {
 onMounted(async () => {
   try {
     const { data } = await api.get('/settings/version')
-    currentVersion.value = data.version || '1.3.9'
+    currentVersion.value = data.version || '1.3.10'
   } catch (e) { /* ignore */ }
   checkManifestUpdate() // 打开页面自动检查一次更新
 })
