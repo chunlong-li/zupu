@@ -3,6 +3,9 @@
        节点＝圆圈（圈内写身份/排行：男＝排行、族内女＝女、配偶＝配），姓名竖排在圈正下方，配偶并排于本人右侧；
        父子连线为直角折线；滚轮缩放、拖拽平移、点击进成员详情 -->
   <div class="gentree">
+    <div v-if="layoutError" style="background:#fff1f0;border:1px solid #ffa39e;color:#a8071a;padding:6px 10px;margin-bottom:6px;font-size:12px;white-space:pre-wrap;max-height:120px;overflow:auto">
+      分层图渲染出错：{{ layoutError }}
+    </div>
     <div class="toolbar">
       <span class="serif title">世代分层图</span>
 
@@ -54,6 +57,15 @@
                       rx="2" fill="#8c2b1e" stroke="#5f1a11" stroke-width="1" />
                 <text v-for="(ch, ci) in r.tagChars" :key="ci"
                       :x="GEN_TAG_X + GEN_TAG_W / 2" :y="r.y - ROW_TOP + 16 + 24 + ci * 20"
+                      text-anchor="middle" font-family="Kaiti, STKaiti, KaiTi, Songti SC, SimSun, serif"
+                      font-size="17" fill="#fdf6e6">{{ ch }}</text>
+              </g>
+              <!-- 第二支及以后：每支开头也重复画一组世代标签，滚到右边也能看出第几世 -->
+              <g v-for="(bx, bi) in bandStarts.slice(1)" :key="'tag' + r.gen + '_' + bi" class="gen-tag">
+                <rect :x="bx - 44" :y="r.y - ROW_TOP + 16" :width="GEN_TAG_W" :height="tagH(r)"
+                      rx="2" fill="#8c2b1e" stroke="#5f1a11" stroke-width="1" />
+                <text v-for="(ch, ci) in r.tagChars" :key="ci"
+                      :x="bx - 44 + GEN_TAG_W / 2" :y="r.y - ROW_TOP + 16 + 24 + ci * 20"
                       text-anchor="middle" font-family="Kaiti, STKaiti, KaiTi, Songti SC, SimSun, serif"
                       font-size="17" fill="#fdf6e6">{{ ch }}</text>
               </g>
@@ -204,9 +216,11 @@ const zoom = ref(1)
 const pan = reactive({ x: 24, y: 24 })
 const svgW = ref(1200)
 const svgH = ref(800)
+const layoutError = ref('')
 const contentW = ref(1000)
 const contentH = ref(800)
 const tipVisible = ref(false)
+const onlyRootIdx = ref(0)   // 0=第一大支（临时：单支调试用）
 const tip = reactive({})
 const marks = ref({ 失: 0, 入: 0, 出: 0, 赘: 0, 止: 0, bothChuRu: 0 })
 
@@ -400,7 +414,12 @@ function isEarlyDeath(m) {
 
 // ===== 布局：一行一辈（最上为第一世）；层内先按长幼排序，再由下往上把父居中于子嗣组 =====
 const layout = computed(() => {
-  const base = members.value || []
+  try {
+    const bandXs = []   // 各始祖分带的起始 x（供模板重复画世代标签）
+  const raw = members.value || []
+  // 全部成员都渲染（多始祖由后面的分带逻辑处理）
+  const base = raw
+
   const empty = { nodes: [], connections: [], rows: [], w: 1000, h: 400 }
   if (!base.length) return empty
 
@@ -519,17 +538,51 @@ const layout = computed(() => {
   const layerNodes = []       // 每层的节点数组（按最终 x 升序）
   let y = 0
 
-  // 每层先排好序并算出每个节点的自身宽度（圈 + 配偶圈）
-  const sortedLayers = layers.map(layer => layer.slice().sort((a, b) => {
-    const va = parentIn.get(a.id) ? 1 : 0            // 有父者排后（无父＝断链根，排该层最前）
-    const vb = parentIn.get(b.id) ? 1 : 0
-    if (va !== vb) return va - vb
-    const ra = rankNum(a.rank), rb = rankNum(b.rank)
-    if (ra != null && rb != null && ra !== rb) return ra - rb
-    if (ra != null && rb == null) return -1
-    if (ra == null && rb != null) return 1
-    return a.id - b.id
-  }))
+  // 每层先排好序：**先按父亲分组**（同一父的子女必须连续、且按父亲的先后顺序排），
+  // 组内再按排行 → id。以前整层直接按排行排，会把不同父亲的子女交错，
+  // 导致连线互相穿插重叠。
+  const sortedLayers = []
+  // 全局先后序号：父可能不在「上一层」（跨代断链/数据不对齐），
+  // 只用上一层的下标会让这类子女拿到 9999 → 被排到整族最后。
+  const orderSeq = new Map()
+  let seqCounter = 0
+  layers.forEach((layer, gi) => {
+    const prevIndex = new Map()
+    orderSeq.forEach((v, k) => prevIndex.set(k, v))
+    const withKey = layer.map(m => {
+      const hasParent = !!parentIn.get(m.id)
+      const pid = hasParent ? (m.father_id || 0) : 0
+      return {
+        m,
+        pid,
+        pIdx: hasParent ? (prevIndex.has(pid) ? prevIndex.get(pid) : 9999) : -1,
+        rank: rankNum(m.rank),
+        birth: birthKey(m),   // 没有排行时按出生日期（与 sortSiblings 一致），最后才用 id
+        // 出继副本（我为了双挂造的 -id 节点）必须排在亲兄弟最后，否则它 id 为负会插到最前面
+        isCopy: m._outMark ? 1 : 0
+      }
+    })
+    withKey.sort((a, b) => {
+      if (!a.pid && b.pid) return -1          // 无父（断链根）排该层最前
+      if (!b.pid && a.pid) return 1
+      if (a.pIdx !== b.pIdx) return a.pIdx - b.pIdx   // 父在上层的先后 → 子女分组连续
+      if (a.pid !== b.pid) return a.pid - b.pid
+      if (a.isCopy !== b.isCopy) return a.isCopy - b.isCopy   // 副本排在亲兄弟之后
+      const ra = a.rank, rb = b.rank
+      if (ra != null && rb != null && ra !== rb) return ra - rb
+      if (ra != null && rb == null) return -1
+      if (ra == null && rb != null) return 1
+      // 没有排行：先比出生日期，再退到 id（录入顺序）
+      const ba = a.birth, bb = b.birth
+      if (ba != null && bb != null && ba !== bb) return ba - bb
+      if (ba != null && bb == null) return -1
+      if (ba == null && bb != null) return 1
+      return a.m.id - b.m.id
+    })
+    const ordered = withKey.map(x => x.m)
+    ordered.forEach(m => orderSeq.set(m.id, seqCounter++))
+    sortedLayers.push(ordered)
+  })
 
   // 逐层建节点（先只算自身宽度与行位置，x 待定）
   const rowHs = sortedLayers.map(layer => rowHOf(layer))    // 每行按各自最长姓名
@@ -603,114 +656,78 @@ const layout = computed(() => {
     if (i + 1 < list.length) hs.push(list[i + 1].halfW)
     return hs.length ? Math.max(...hs) : 0
   }
-  // 轴布局：长子居左主干（rel=0），弟弟们依次往右，列距不足时补到「姓名块不重叠」
-  function layoutSubtree(node) {
-    const ks = (kids.get(node.id) || []).map(k => placed.get(k.id)).filter(Boolean)
-    if (!ks.length) {
-      relOf.set(node.id, { rel: 0, leftExt: R, rightExt: Math.max(R, node.width - R) })
-      return
+  // ===== 布局（唯一决定 x 的地方）：子树占位 + 同层整树右推 =====
+  {
+    const GAP_SIB = 20      // 兄弟子树之间的横向间隙（用户要求 20）
+    const GAP_ROOT = 120    // 始祖之间的分界
+    const GAP_ROW = 28      // 同层相邻家庭之间的最小间隙
+    const wOf = nd => {
+      let w = nd.width || 2 * R
+      ;(nd.spouses || []).forEach(s => { const need = (s.rel || 0) + 2 * R; if (need > w) w = need })
+      return w
     }
-    ks.forEach(layoutSubtree)
-    // 本人 ↔ 配偶：列距至少 = 两者姓名块半宽 + 间隙（配偶默认紧贴本人，可能压字）
-    ks.forEach(k => {
-      let rx = R + SP_GAP
-      let prevHalf = k.halfW
-      k.spouses.forEach(sp => {
-        const need = prevHalf + Math.max(sp.chars.length, 1) * HALF_CHAR + AX_GAP
-        rx = Math.max(rx + 2 * R + SP_GAP, need)
-        sp.relX = rx
-        prevHalf = Math.max(sp.chars.length, 1) * HALF_CHAR
-        rx += 2 * R + SP_GAP
-      })
-    })
-    let relX = 0
-    ks.forEach((k, i) => {
-      const rel = relOf.get(k.id)
-      rel.rel = i === 0 ? 0 : relX
-      const nat = rel.rel + rel.leftExt + AX_GAP + rel.rightExt
-      const minGap = rightH(k) + (i + 1 < ks.length ? leftH(ks[i + 1]) : 0) + AX_GAP
-      relX = Math.max(nat, minGap)
-    })
-    relOf.set(node.id, {
-      rel: 0,                                        // 父对齐其最左（长）子
-      leftExt: Math.max(R, leftH(ks[0])),
-      rightExt: Math.max(...ks.map(k => relOf.get(k.id).rel + rightH(k)))
-    })
-  }
-  const absOf = new Map()      // id → 绝对圈心 x（相对坐标起点 0，后面整体右移）
-  const relRootOf = new Map()
-  let cursorX = 0
-  const placeSubtreeAt = (node) => {
-    if (!relOf.has(node.id)) layoutSubtree(node)
-    const rel = relOf.get(node.id)
-    relRootOf.set(node.id, cursorX + (R - rel.rel))
-    absOf.set(node.id, relRootOf.get(node.id))
-    cursorX = relRootOf.get(node.id) + rel.rel + rel.rightExt + COL_GAP
-  }
-  ;(layerNodes[0] || []).forEach(r => { layoutSubtree(r); placeSubtreeAt(r) })
-  // ② 自顶向下：父已定位 → 用父的绝对位置 + 相对偏移；父未定位 → 自成一组接在游标之后
-  layerNodes.forEach((row, gi) => {
-    if (gi === 0) return
-    row.forEach(nd => {
-      const pid = nd.m.father_id || 0
-      const pAbs = absOf.get(pid)
-      if (pAbs == null) {
-        placeSubtreeAt(nd)
-      } else {
-        if (!relOf.has(nd.id)) layoutSubtree(nd)
-        absOf.set(nd.id, pAbs + relOf.get(nd.id).rel)
+    const kidNodesOf = nd => (kids.get(nd.id) || []).map(k => placed.get(k.id)).filter(Boolean)
+    const shiftSub = (nd, dx) => {
+      const stack = [nd]
+      const seen = new Set()
+      while (stack.length) {
+        const cur = stack.pop()
+        if (seen.has(cur.id)) continue
+        seen.add(cur.id)
+        cur.centerX += dx
+        kidNodesOf(cur).forEach(k => stack.push(k))
       }
-    })
-  })
-  // ③ 迭代收敛：既要「同层姓名块整体不重叠」，又要「父对齐其最左子女」。
-  //    交替做两件事、跑若干轮：① 同层从左到右右推冲突列及其全部后代；② 父在子女定位后重新对齐长子。
-  for (let iter = 0; iter < 4; iter++) {
-    let moved = 0
-    layerNodes.forEach(row => {
-      const seq = row.slice().sort((a, b) => absOf.get(a.id) - absOf.get(b.id))
-      for (let i = 1; i < seq.length; i++) {
-        const prev = seq[i - 1], cur = seq[i]
-        const need = rightH(prev) + leftH(cur) + AX_GAP
-        const dx = (absOf.get(prev.id) + need) - absOf.get(cur.id)
-        if (dx > 0.5) {
-          moved++
-          const stack = [cur.id], seen = new Set()
-          while (stack.length) {
-            const id = stack.pop()
-            if (seen.has(id)) continue
-            seen.add(id)
-            absOf.set(id, absOf.get(id) + dx)
-            ;(kids.get(id) || []).forEach(k => stack.push(k.id))   // 全部后代（含跨世代）
-          }
-        }
+    }
+
+    const doneSet = new Set()
+    let cursorX = 0
+    const tidy = (nd, x0) => {
+      if (doneSet.has(nd.id)) return 0
+      doneSet.add(nd.id)
+      const ks = kidNodesOf(nd)
+      // 没有子嗣的人也必须按「自己 + 配偶圈」的真实宽度占位：
+      // 一旦缩进去，下一个兄弟就会以这个缩小的宽度为起点排过来，直接压在配偶圈上（叠加的根源）。
+      if (!ks.length) { nd.centerX = x0 + R; return wOf(nd) }
+      let cur = x0
+      ks.forEach(k => { const w = tidy(k, cur); cur += w + GAP_SIB })
+      // 父压在长子/长女正上方（族谱从左往右排）
+      nd.centerX = ks[0].centerX
+      // 父本人的配偶圈占在右侧，可能压住后面的子女 → 把那些子女的整棵子树右推
+      let bound = nd.centerX + wOf(nd) - R + GAP_SIB
+      for (let i = 1; i < ks.length; i++) {
+        const k = ks[i]
+        const left = k.centerX - R
+        if (left < bound) shiftSub(k, bound - left)
+        bound = Math.max(bound, k.centerX + wOf(k) - R + GAP_SIB)
       }
+      // 子树的宽度 = 整棵子树（所有世代）的最大右沿。只算直接子女会漏掉深层宽支，
+      // 导致后面的兄弟家族被摆进这一支的范围里（这正是重叠与错位的根因）。
+      const rightMostOf = (node) => {
+        let r = node.centerX + wOf(node) - R
+        kidNodesOf(node).forEach(k => { r = Math.max(r, rightMostOf(k)) })
+        return r
+      }
+      return rightMostOf(nd) - x0
+    }
+
+    // 根（没有父，或父不在本图里）先排；每个根的整棵子树占一段
+    const rootNodes = nodes.filter(nd => {
+      const f = nd.m && nd.m.father_id
+      return !f || !placed.has(f)
+    }).sort((a, b) => (a.m.generation || 0) - (b.m.generation || 0) || a.id - b.id)
+    rootNodes.forEach((nd, i) => {
+      if (i > 0) cursorX += GAP_ROOT
+      bandXs.push(cursorX)          // 每支的起始 x（第二支开始要重复画世代标签）
+      cursorX += tidy(nd, cursorX) + GAP_SIB
     })
-    // ② 父重新对齐其最左子女（左主干），保持整树靠左
-    let realign = 0
-    layerNodes.forEach((row, gi) => {
-      if (gi === 0) return
-      row.forEach(nd => {
-        const pid = nd.m.father_id || 0
-        const pAbs = absOf.get(pid)
-        if (pAbs == null) return
-        const ks = kids.get(nd.id) || []
-        if (!ks.length) return
-        const kidsAbs = ks.map(k => absOf.get(k.id)).filter(v => v != null)
-        if (!kidsAbs.length) return
-        const want = Math.min(...kidsAbs)
-        const d = want - absOf.get(nd.id)
-        if (Math.abs(d) > 0.5) {
-          realign++
-          // 只移动本节点（其子树由下一轮/上位节点再对齐处理）
-          absOf.set(nd.id, want)
-        }
-      })
+    nodes.forEach(nd => {
+      if (!doneSet.has(nd.id)) cursorX += tidy(nd, cursorX) + GAP_SIB
     })
-    if (!moved && !realign) break
+
   }
-  nodes.forEach(nd => { nd.centerX = absOf.get(nd.id) })
 
   marks.value = stat
+
 
   // 转绝对坐标（整体右移，留出世代标签位置）
   let maxRight = 0
@@ -723,10 +740,10 @@ const layout = computed(() => {
     maxRight = Math.max(maxRight, nd.right)
   })
 
-  // 图窄于视口时整体水平居中
+  // 不再整体居中：图始终紧贴世代标签列（居中会把内容推离标签，越宽的图离得越远）
   const wrapW = wrap.value ? wrap.value.clientWidth : 0
   const needW = maxRight + 48
-  const off = needW < wrapW ? (wrapW - needW) / 2 : 0
+  const off = 0
   if (off > 0) {
     nodes.forEach(n => {
       n.cx += off
@@ -737,6 +754,20 @@ const layout = computed(() => {
     maxRight += off
   }
   contentW.value = Math.max(maxRight + 48, wrapW, 800)
+
+  // 调试钩子：控制台执行 copy(window.__genLayout) 可导出每个成员的最终坐标，
+  // 用于和离线算法逐个比对（确认「算错」还是「画错」）。确认后可删。
+  try {
+    window.__genLayout = nodes.map(nd => ({
+      id: nd.id,
+      name: (nd.chars || []).join(''),
+      x: Math.round(nd.cx),
+      y: Math.round(nd.y),
+      father: (nd.m && nd.m.father_id) || 0,
+      rowTop: Math.round(nd.rowTop),
+      spouses: (nd.spouses || []).map(s => Math.round(s.cx))
+    }))
+  } catch (e) { /* 忽略 */ }
 
   // ⑥ 连接线（最朴素的直角折线，只有两处折角）
   //    路径 = M(父cx, 姓名块下沿+5) V(横杠Y) H(子cx) V(子圈顶)
@@ -761,7 +792,13 @@ const layout = computed(() => {
     const childTopY = ks[0].y - R                     // 子圈顶（同层子圈同一 y）
     // 横杠 = 统一姓名块下沿 + K；行高已保证它仍在子圈顶之上（≥ ABOVE_GAP）
     // 横杠 = 姓名块下沿 + NAME_DROP；再夹一手，保证仍在子圈顶上方 ABOVE_GAP（收太紧的行自动兜底）
-    const barY = Math.max(blockBottomOf(p) + NAME_DROP, childTopY - ABOVE_GAP)
+    // 横杠 y：优先「姓名块下沿 + K」，但**必须**落在所有子圈顶之上（留 6px），
+    // 以前用 max(...) 会把它压到子圈里面 → 竖线和横杠对不上，看起来就是断线。
+    const topOfKids = Math.min(...ks.map(k => k.y - R))
+    const barY = Math.min(
+      Math.max(blockBottomOf(p) + NAME_DROP, dropY + 8),
+      topOfKids - 6
+    )
     const xs = ks.map(k => k.cx)
     const bx1 = Math.min(...xs), bx2 = Math.max(...xs)
     connections.push({ kind: 'drop', id: p.id, label: p.chars.join(''), chars: p.chars.length, rowNameLen: p.rowNameLen,
@@ -779,7 +816,11 @@ const layout = computed(() => {
   const bottom = (lastRow ? lastRow.rowTop + lastRow.rowH : 0) + 24
   contentH.value = Math.max(bottom, 600)
 
-  return { nodes, connections, rows, w: contentW.value, h: contentH.value }
+  return { nodes, connections, rows, bands: bandXs, w: contentW.value, h: contentH.value }
+  } catch (e) {
+    layoutError.value = String((e && e.stack) || e)
+    return { nodes: [], connections: [], rows: [], bands: [], w: 1000, h: 600 }
+  }
 })
 
 const nodes = computed(() => layout.value.nodes)
@@ -794,6 +835,7 @@ let measuring = false
 //   唯一处理：同层内不同组的横杠，若端点相接/重叠，则两组各自内缩到至少 GAP 间隙
 //   （属主允许的唯一「收紧」，不是绕行/断线）
 const BAR_GAP = 8
+const bandStarts = computed(() => layout.value.bands || [])
 const connections = computed(() => {
   const raw = connectionsRaw.value
   const out = []
@@ -890,6 +932,22 @@ function onIncludeChildrenChange(v) {
 }
 
 // ===== 视图交互：缩放 / 平移 / 定位 / 导出 =====
+
+// 导出当前布局坐标（JSON）：用于和离线算法逐个比对，排查「算错 / 画错」
+function exportLayout() {
+  try {
+    const data = window.__genLayout || []
+    const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `gen-layout-${Date.now()}.json`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000)
+  } catch (e) {
+    console.error('导出坐标失败', e)
+  }
+}
+
 function fitToView() {
   if (!wrap.value) return
   const vw = wrap.value.clientWidth || 1

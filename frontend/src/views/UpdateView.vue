@@ -161,6 +161,34 @@
     <el-card class="section update-log">
       <template #header><span>版本更新日志</span></template>
       <el-collapse v-model="activeLogs">
+                                      <el-collapse-item name="logStable1312">
+            <template #title>
+              <span class="log-title">v1.3.12</span>
+              <span class="log-count">2026-11-03 发布</span>
+            </template>
+            <div class="log-entry">
+              <div class="log-entry-head">
+                <span class="log-ver">v1.3.12</span>
+                <span class="log-date">2026-11-03</span>
+              </div>
+              <div class="log-entry-body">
+                <p><b>新增「📜 纯文字连线」世系图</b>（世系可视化菜单）：</p>
+                <p>· 竖排姓名、无圆圈；排行用中文竖排（行一、行二…二十三）；</p>
+                <p>· 女儿在排行下加「女」；配偶与本人并排，正配/继配标在配偶名右侧；</p>
+                <p>· 失考/无嗣/出继/入继/收养按短语分列竖排在名字左侧；</p>
+                <p>· 支持滚轮缩放（跟随光标）、双指捏合、四向拖拽、双击复位；</p>
+                <p>· 导出下拉：PNG（2×）/ SVG / PDF；右侧世代与字辈列可开关。</p>
+                <p><b>世代分层图重构（重要）：</b></p>
+                <p>· 布局改为「子树占位」：父压在长子/长女正上方、同父子女连续并按排行、子树之间不交叉；</p>
+                <p>· 子树宽度按整棵树的最大右沿计算，修长横杠穿插、侄子落进伯父位置的问题；</p>
+                <p>· 多始祖自动分带（120px 分界），每支开头重复显示世代标签，滚到右边也知道第几世；</p>
+                <p>· 无排行时按出生日期排序，再退到录入顺序。</p>
+                <p><b>其它修正：</b></p>
+                <p>· 更新日志默认展开最新一条（以前写死成 1.3.9 那条）；</p>
+                <p>· 过继/收养：父母合并录入（生父/嗣父/养父各配母），选父带出配偶、宗法自动同步。</p>
+              </div>
+            </div>
+          </el-collapse-item>
                                       <el-collapse-item name="logStable1311">
             <template #title>
               <span class="log-title">v1.3.11</span>
@@ -1833,12 +1861,21 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 
 const currentVersion = ref('')
-const activeLogs = ref(["logStable139"]) // 更新日志折叠面板（默认展开最新正式版；测试版不发日志）
+// 更新日志折叠面板：默认展开「第一条」（即最新版本）。
+// 以前这里写死成 logStable139，版本一多就展开到旧版；改成挂载后自动取第一个折叠项的名字，永不再漂移。
+const activeLogs = ref(["logStable139"])
+onMounted(() => {
+  nextTick(() => {
+    const btn = document.querySelector('.update-log .el-collapse-item button')
+    const m = (btn && btn.id || '').match(/el-collapse-head-(.+)$/)
+    if (m && m[1]) activeLogs.value = [m[1]]
+  })
+})
 const selectedFile = ref(null)
 const fileList = ref([])
 const updating = ref(false)
@@ -1906,7 +1943,7 @@ function compareVersion(a, b) {
 onMounted(async () => {
   try {
     const { data } = await api.get('/settings/version')
-    currentVersion.value = data.version || '1.3.11'
+    currentVersion.value = data.version || '1.3.12'
   } catch (e) { /* ignore */ }
   checkManifestUpdate() // 打开页面自动检查一次更新
 })

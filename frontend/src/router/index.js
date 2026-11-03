@@ -9,6 +9,7 @@ const routes = [
   // 需要登录
   { path: '/', redirect: '/dashboard' },
   { path: '/tree', name: 'tree', component: () => import('../views/TreeView.vue'), meta: { auth: true } },
+  { path: '/texttree', name: 'texttree', component: () => import('../views/TextTreeView.vue'), meta: { auth: true } },
   { path: '/sutree', name: 'sutree', component: () => import('../views/SuTreeView.vue'), meta: { auth: true } },
   { path: '/susi', name: 'susi', component: () => import('../views/SuSiTreeView.vue'), meta: { auth: true } },
   { path: '/suzhu', name: 'suzhu', component: () => import('../views/SuZhuTiView.vue'), meta: { auth: true } },

@@ -59,6 +59,7 @@
           <el-sub-menu index="viz">
             <template #title>🌳 世系可视化</template>
             <el-menu-item index="/tree">🏯 宝塔式</el-menu-item>
+            <el-menu-item index="/texttree">📜 纯文字连线</el-menu-item>
             <el-menu-item index="/sutree">🎐 苏式垂吊图</el-menu-item>
             <el-menu-item index="/susi">🕸️ 苏式垂丝图</el-menu-item>
             <el-menu-item index="/suzhu">📿 苏氏垂珠体</el-menu-item>
@@ -135,6 +136,7 @@
           <el-sub-menu index="viz">
             <template #title>🌳 世系可视化</template>
             <el-menu-item index="/tree">🏯 宝塔式</el-menu-item>
+            <el-menu-item index="/texttree">📜 纯文字连线</el-menu-item>
             <el-menu-item index="/sutree">🎐 苏式垂吊图</el-menu-item>
             <el-menu-item index="/susi">🕸️ 苏式垂丝图</el-menu-item>
             <el-menu-item index="/suzhu">📿 苏氏垂珠体</el-menu-item>
