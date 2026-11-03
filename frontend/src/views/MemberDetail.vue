@@ -41,7 +41,16 @@
             <div class="info-item"><span class="label">性别</span><span>{{ member.gender === 1 ? '男' : '女' }}</span></div>
             <div class="info-item"><span class="label">宗法类型</span><span>{{ member.clan_type }}</span></div>
             <div class="info-item"><span class="label">族谱分类</span><span>{{ member.record_type || '内纪' }}</span></div>
-            <div class="info-item" v-if="member.foster_father_id"><span class="label">嗣父</span><span class="clickable" @click="goMember(member.foster_father_id)">{{ getMemberName(member.foster_father_id) }}</span></div>
+            <div class="info-item" v-for="a in (member.adoptions || [])" :key="'ad'+a.id">
+              <span class="label">{{ a.kind }}</span>
+              <span v-if="a.father_id" class="clickable" @click="goMember(a.father_id)">{{ a.father_name || getMemberName(a.father_id) }}</span>
+              <span v-else>{{ a.father_text || '—' }}</span>
+              <template v-if="a.mother_id">
+                <span class="label" style="margin-left:8px">{{ a.kind === '养父' ? '养母' : '嗣母' }}</span>
+                <span class="clickable" @click="goMember(a.mother_id)">{{ a.mother_name || getMemberName(a.mother_id) }}</span>
+              </template>
+            </div>
+            <div class="info-item" v-if="member.birth_father_text"><span class="label">生父（谱外）</span><span>{{ member.birth_father_text }}</span></div>
             <div class="info-item"><span class="label">生父</span><span class="clickable" @click="goMember(member.father_id)">{{ getMemberName(member.father_id) }}</span></div>
             <div class="info-item"><span class="label">生母</span><span class="clickable" @click="goMother()">{{ getMotherName() }}</span></div>
             <div class="info-item"><span class="label">籍贯</span><span>{{ member.native_place || '—' }}</span></div>
@@ -241,23 +250,48 @@
           <el-col :span="12"><el-form-item label="出生"><el-row :gutter="4"><el-col :span="8"><el-select v-model="editForm.birth_calendar" size="small"><el-option label="公历" value="solar" /><el-option label="农历" value="lunar" /></el-select></el-col><el-col :span="16"><el-input v-model="editForm.birth_date" placeholder="1900-08-01" @blur="convertDate" /></el-col></el-row></el-form-item></el-col>
           <el-col :span="8"><el-form-item label="卒年"><el-input v-model="editForm.death_gregorian" placeholder="留空=在世" /></el-form-item></el-col>
         </el-row>
-        <el-row :gutter="12">
+        <el-form-item label="父母">
+          <div style="width:100%;display:flex;gap:8px;align-items:flex-start">
+            <el-tooltip :visible="adoptTipVisible" placement="top" effect="light" trigger="manual">
+              <template #content><div style="max-width:330px;line-height:1.75" v-html="adoptTipHtml"></div></template>
+              <span ref="adoptQRef" class="adopt-q" @click.stop="toggleAdoptTip">?</span>
+            </el-tooltip>
+            <div style="flex:1">
+              <!-- 生父 / 生母 -->
+              <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+                <el-select :model-value="'生父'" disabled style="width:90px"><el-option label="生父" value="生父" /></el-select>
+                <el-select v-model="editForm.father_id" filterable clearable placeholder="生父（本族）" style="width:160px" @change="onFatherChange">
+                  <el-option v-for="m in fatherCandidates" :key="'f'+m.id" :label="`${m.name || (m.surname||'')+(m.given_name||'')}（${genLabel(m)}）`" :value="m.id" />
+                </el-select>
+                <el-select v-if="editForm.record_type !== '外纪'" v-model="editForm.mother_spouse_id" filterable clearable placeholder="生母" style="width:160px" @focus="loadEditMotherCandidates">
+                  <el-option v-for="m in editMotherCandidates" :key="'sp'+m.id" :label="`${m.name}（${m.type}）`" :value="m.id" />
+                </el-select>
+                <el-input v-if="!editForm.father_id" v-model="editForm.birth_father_text" placeholder="生父在谱外：姓名" style="width:180px" />
+              </div>
+              <!-- 嗣父 / 养父（各带母） -->
+              <div v-for="(a, i) in editForm.adoptions" :key="'ad'+i" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+                <el-select v-model="a.kind" style="width:90px" @change="syncClanTypeByAdoption">
+                  <el-option label="嗣父" value="嗣父" />
+                  <el-option label="养父" value="养父" />
+                </el-select>
+                <el-select v-model="a.father_id" filterable clearable placeholder="父（本族）" style="width:160px" @change="onAdoptFatherChange(a)">
+                  <el-option v-for="m in fatherCandidates" :key="'af'+m.id" :label="`${m.name || (m.surname||'')+(m.given_name||'')}（${genLabel(m)}）`" :value="m.id" />
+                </el-select>
+                <el-select v-model="a.mother_id" filterable clearable placeholder="母（本族）" style="width:160px">
+                  <el-option v-for="m in (fatherSpouseCache[a.father_id] || [])" :key="'am'+m.id" :label="`${m.name}（${m.type}）`" :value="m.id" />
+                </el-select>
+                <el-button text type="danger" @click="removeAdoption(i)">删除</el-button>
+              </div>
+              <div>
+                <el-button size="small" @click="addAdoption">+ 添加父母</el-button>
+              </div>
+            </div>
+          </div>
+        </el-form-item>
+        <el-row :gutter="12" v-if="editForm.record_type === '外纪'">
           <el-col :span="12">
-            <el-form-item label="生父"><el-select v-model="editForm.father_id" filterable clearable placeholder="选择生父" style="width:100%" @change="onFatherChange"><el-option v-for="m in fatherCandidates" :key="m.id" :label="`${m.name || (m.surname||'')+(m.given_name||'')}（${genLabel(m)}）`" :value="m.id" /></el-select></el-form-item>
-          </el-col>
-          <el-col :span="12" v-if="editForm.record_type === '外纪'">
             <el-form-item label="儿子"><el-select v-model="editForm.son_id" filterable clearable placeholder="选择儿子（关键）" style="width:100%" @change="onSonChange"><el-option v-for="m in sonCandidates" :key="m.id" :label="`${m.name || (m.surname||'')+(m.given_name||'')}（${genLabel(m)}）`" :value="m.id" /></el-select>
               <div v-if="editForm.son_id" style="margin-top:4px;color:#909399;font-size:12px">{{ sonPositionText }}</div></el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="12" v-if="editForm.record_type !== '外纪'">
-          <el-col :span="12">
-            <el-form-item label="生母"><el-select v-model="editForm.mother_spouse_id" filterable clearable placeholder="选择生母（配偶）" style="width:100%" @focus="loadEditMotherCandidates"><el-option v-for="m in editMotherCandidates" :key="'sp'+m.id" :label="`${m.name}（${m.type}）`" :value="m.id" /></el-select></el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item label="嗣父"><el-select v-model="editForm.foster_father_id" filterable clearable placeholder="选择嗣父" style="width:100%"><el-option v-for="m in fatherCandidates" :key="m.id" :label="`${m.name || (m.surname||'')+(m.given_name||'')}（${genLabel(m)}）`" :value="m.id" /></el-select></el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="12">
@@ -538,7 +572,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
@@ -696,7 +730,7 @@ const aiGenLength = ref('中')     // 生成小传的篇幅
 const levelOptions = [0, 25, 50, 75, 100]
 const aiConstraint = ref(50) // 约束等级（越低越严）
 const aiDegree = ref(50) // 润色程度（越高改动越大）
-const clanTypes = ['本生', '嗣子', '兼祧', '入赘', '养子']
+const clanTypes = ['本生', '嗣子', '兼祧', '入赘', '养子', '出继外姓']
 
 // 修改历史 / 版本回滚
 const versionsVisible = ref(false)
@@ -711,6 +745,11 @@ const fatherCandidates = computed(() => {
     return allMembers.value.filter(m => m.gender === 1)
   }
   return allMembers.value.filter(m => m.gender === 1 && m.generation === editForm.generation - 1)
+})
+
+const motherCandidates = computed(() => {
+  if (editForm.record_type === '外纪') return allMembers.value.filter(m => m.gender === 2)
+  return allMembers.value.filter(m => m.gender === 2 && m.generation === editForm.generation - 1)
 })
 
 function genLabel(m) {
@@ -752,6 +791,13 @@ function onFatherChange(fid) {
     return
   }
   const father = allMembers.value.find(m => m.id === fid)
+  // 选了生父：拉他的配偶作为生母候选，并默认选正配
+  loadEditMotherCandidates().then(() => {
+    if (!editForm.mother_spouse_id) {
+      const main = editMotherCandidates.value.find(x => x.type === '正配') || editMotherCandidates.value[0]
+      if (main) editForm.mother_spouse_id = main.id
+    }
+  })
   if (father) {
     editForm.generation = father.generation + 1
     // 自动继承父亲的房支：未手动选择房支时，跟随父亲
@@ -969,14 +1015,85 @@ function calcAges() {
   return `周岁 ${zhousui} · 虚岁 ${xusui}`
 }
 
+
+// 过继/收养：加一行；选了本谱成员就清掉谱外文本
+
+// 选父后拉他的配偶，作为「母」下拉的候选（并默认选正配）
+const fatherSpouseCache = ref({})
+async function loadFatherSpouses(fid) {
+  if (!fid) return []
+  if (!fatherSpouseCache.value[fid]) {
+    try {
+      const { data } = await api.get(`/members/${fid}/spouses`)
+      fatherSpouseCache.value[fid] = data || []
+    } catch (e) {
+      fatherSpouseCache.value[fid] = []
+    }
+  }
+  return fatherSpouseCache.value[fid]
+}
+async function onAdoptFatherChange(a) {
+  a.mother_id = null
+  const list = await loadFatherSpouses(a.father_id)
+  const main = list.find(x => x.type === '正配') || list[0]
+  if (main) a.mother_id = main.id
+  syncClanTypeByAdoption()
+}
+
+
+// 嗣父/养父选了人 → 宗法自动跟着变（有嗣父＝嗣子，有养父＝养子）
+function syncClanTypeByAdoption() {
+  const rows = editForm.adoptions || []
+  const hasFoster = rows.some(a => a.kind === '嗣父' && a.father_id)
+  const hasRaise = rows.some(a => a.kind === '养父' && a.father_id)
+  if (hasFoster) editForm.clan_type = '嗣子'
+  else if (hasRaise) editForm.clan_type = '养子'
+  // 行删光了：如果当前宗法是自动设上去的（嗣子/养子），回退成「本生」
+  else if (editForm.clan_type === '嗣子' || editForm.clan_type === '养子') editForm.clan_type = '本生'
+}
+function removeAdoption(i) {
+  editForm.adoptions.splice(i, 1)
+  syncClanTypeByAdoption()
+}
+
+function addAdoption() {
+  if (!Array.isArray(editForm.adoptions)) editForm.adoptions = []
+  editForm.adoptions.push({ father_id: null, mother_id: null, father_text: '', kind: '嗣父', note: '' })
+}
+// 过继/收养说明气泡：点「?」打开/关闭；点页面其它地方也会关闭
+const adoptTipVisible = ref(false)
+const adoptTipHtml = '<div>每行是「父母」一对：<b>生父/生母</b>、<b>嗣父/嗣母</b>、<b>养父/养母</b>。父与母都从本族成员里选。</div><div style="margin-top:6px"><b>外族人是生父</b>：生父不在本谱时，把姓名填在生父框右边的输入框里。</div><div style="margin-top:6px">兼祧＝加多条「嗣父」；生父在本谱＝出继（生父侧）/ 入继（嗣父侧）；生父在谱外＝收养。</div><div style="margin-top:6px;color:#999">点问号打开；再点问号或点页面其它地方关闭。</div>'
+const adoptQRef = ref(null)
+function toggleAdoptTip() {
+  adoptTipVisible.value = !adoptTipVisible.value
+}
+function onDocClickForTip(e) {
+  if (!adoptTipVisible.value) return
+  const el = adoptQRef.value
+  if (el && (el === e.target || el.contains(e.target))) return
+  adoptTipVisible.value = false
+}
+onMounted(() => document.addEventListener('click', onDocClickForTip))
+onBeforeUnmount(() => document.removeEventListener('click', onDocClickForTip))
+
+
 function openEdit() {
   const copy = JSON.parse(JSON.stringify(member))
+  // 先清空：birth_date 是纯 UI 字段（接口不返回），不清会把上一个成员的出生日期带进来
+  Object.keys(editForm).forEach(k => delete editForm[k])
   Object.assign(editForm, copy)
   originalBranchId.value = member.branch_id || 0
   if (!editForm.surname) editForm.surname = familySurname.value
-  // 初始化出生日期字段
+  // 初始化出生日期字段（只用本成员自己的生年）
   editForm.birth_calendar = editForm.birth_calendar || 'solar'
-  editForm.birth_date = editForm.birth_date || editForm.birth_gregorian || ''
+  editForm.birth_date = editForm.birth_gregorian || ''
+  // 过继/收养关系（嗣父/养父，可多条）
+  editForm.adoptions = JSON.parse(JSON.stringify(member.adoptions || []))
+  // 0 不是有效 id：转成 null，选择框才会显示灰色「父 / 母」占位
+  editForm.father_id = editForm.father_id || null
+  editForm.mother_id = editForm.mother_id || null
+  editForm.mother_spouse_id = editForm.mother_spouse_id || null
+  editForm.adoptions.forEach(a => { a.father_id = a.father_id || null; a.mother_id = a.mother_id || null })
   editVisible.value = true
   // 预加载编辑时的生母候选人
   loadEditMotherCandidates()
@@ -1011,6 +1128,11 @@ function countDescendants(memberId) {
 async function saveMember() {
   await convertDate()  // 确保转换已执行
   const payload = { ...editForm }
+  // 选择框空着是 null，提交前统一回 0
+  ;['father_id', 'mother_id', 'mother_spouse_id', 'son_id'].forEach(k => { if (!payload[k]) payload[k] = 0 })
+  if (Array.isArray(payload.adoptions)) {
+    payload.adoptions = payload.adoptions.map(a => ({ ...a, father_id: a.father_id || 0, mother_id: a.mother_id || 0 }))
+  }
   payload.name = (payload.surname || '') + (payload.given_name || '')
   // 房支规范化：未选择时清空 branch_id 与 branch 文本（避免旧文本被后端重新匹配）
   payload.branch_id = payload.branch_id || 0
@@ -1105,12 +1227,15 @@ function openAddChild() {
     birth_date: '',
     birth_gregorian: '',
     birth_lunar: '',
+    birth_father_text: '',
+    adoptions: [],
     birth_ganzhi: '',
     birth_era: '',
     death_gregorian: '',
     father_id: parseInt(memberId),
-    mother_id: 0,
-    mother_spouse_id: autoMotherId,
+    mother_id: null,
+    mother_spouse_id: autoMotherId || null,
+    adoptions: [],
     foster_father_id: 0,
     generation: member.generation + 1,
     generation_word: '',
@@ -1549,4 +1674,23 @@ onMounted(load)
 .diff-old { color: #c45656; }
 .diff-new { color: #67c23a; }
 .hz-inline { display: flex; align-items: center; gap: 4px; width: 100%; }
+</style>
+
+<style scoped>
+.adopt-label { display: inline-flex; align-items: center; gap: 4px; }
+.adopt-q {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid #c3bba9;
+  color: #8a7f6d;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+.adopt-q:hover { background: #f0ebe0; color: #6b6152; }
 </style>

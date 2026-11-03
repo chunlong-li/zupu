@@ -2,11 +2,11 @@ package handler
 
 import (
 	"crypto/sha256"
-	"log"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -42,11 +42,11 @@ func detectMediaType(name string) string {
 	return "image"
 }
 
-
 // ===== 素材可见范围（按调用者的授权房支，后端强制）=====
 // 判定依据：认证中间件写入 context 的 role / branch（＝users.branch，由「用户管理→分配房支」设置）。
-//   all  ＝不限制（超级管理员）；deny ＝什么都不许（分配了不存在的房支）；否则 ids＝允许的房支（总谱素材恒允许）
-//   ② 未分配房支 → 只看总谱素材（不含任何房支）
+//
+//	all  ＝不限制（超级管理员）；deny ＝什么都不许（分配了不存在的房支）；否则 ids＝允许的房支（总谱素材恒允许）
+//	② 未分配房支 → 只看总谱素材（不含任何房支）
 type mediaScope struct {
 	all  bool
 	deny bool

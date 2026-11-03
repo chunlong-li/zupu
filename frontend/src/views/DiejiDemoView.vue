@@ -1186,6 +1186,17 @@ const people = computed(() => {
   const out = []
   genList.forEach(g => {
     genMap[g].forEach((node, idx) => {
+      // 出繼/入繼/收養：本人是哪一家的嗣子/養子；以及本人名下的嗣子（別人過繼進來）
+      const foster = (node.adoptions || []).find(a => a.kind === '嗣父' && a.father_id)
+      const raise = (node.adoptions || []).find(a => a.kind === '养父' && a.father_id)
+      let adoptText = ''
+      if (foster) adoptText = (node.father_id ? '出繼' : '入繼') + (foster.father_name || '') + '為嗣'
+      else if (raise) adoptText = (raise.father_name || '') + '養子'
+      else if (node.birth_father_text) adoptText = '自' + node.birth_father_text + '收養'
+      const adoptSons = list.filter(m2 => (m2.adoptions || []).some(a => a.father_id === node.id))
+      const adoptSonsText = adoptSons.length
+        ? '嗣子' + adoptSons.length + ' ' + adoptSons.map(m2 => fullName(m2)).join('、')
+        : ''
       // 子女（子先女后，按排行），挂到第一个配偶
       const children = [...node.sons, ...node.daughters].map(c => fullName(c))
       const spouses = (node.spouses || []).map(s => ({ name: fullName(s), children: [] }))
@@ -1221,6 +1232,8 @@ const people = computed(() => {
         father_id: node.father_id,
         gen: node.generation,
         record_type: node.record_type || '内纪',
+        adoptText,
+        adoptSonsText,
         kaijiNote: '',   // 本支开基祖小字（后处理填）
         sisters: sistersText,
         rel: (() => {
@@ -1328,6 +1341,9 @@ function detailText(p) {
   // 无嗣：名下无子女者，资料格末尾注「無嗣」
   const hasKids = (p.spouses || []).some(s => s.children && s.children.length)
   if (p.noHeir && !hasKids) parts.push(NO_HEIR_TRAD)
+  // 出繼/入繼/收養（本人）與承嗣子（嗣子N 名字）
+  if (p.adoptText) parts.push(p.adoptText)
+  if (p.adoptSonsText) parts.push(p.adoptSonsText)
   return parts.join(' ')
 }
 

@@ -77,6 +77,9 @@ var ioCols = []ioColumn{
 	{Key: "clan_type", Label: "宗法", Aliases: []string{"入嗣方式"}},
 	{Key: "record_type", Label: "类型", Aliases: []string{"纪别"}},
 	{Key: "father_id", Label: "生父ID", Aliases: []string{"父ID", "父亲ID"}},
+	{Key: "birth_father_text", Label: "生父(谱外)", Aliases: []string{"谱外生父", "入继生父"}},
+	{Key: "foster_names", Label: "嗣父", Aliases: []string{"嗣父姓名"}},
+	{Key: "raise_names", Label: "养父", Aliases: []string{"养父姓名"}},
 	{Key: "father_name", Label: "生父姓名", Aliases: []string{"父姓名", "父亲姓名", "父名"}},
 	{Key: "father_father_name", Label: "生父之父姓名", Aliases: []string{"祖父姓名", "父之父", "祖父"}},
 	{Key: "mother_id", Label: "生母ID", Aliases: []string{"母ID", "母亲ID"}},
@@ -150,6 +153,7 @@ type exportMember struct {
 	SpouseName       string
 	SpouseType       string
 	ChildrenCount    int
+	Adoptions        []Adoption
 }
 
 // Export 导出成员档案（xlsx / csv）
@@ -348,6 +352,23 @@ func (h *MemberIOHandler) queryExportRows(c *gin.Context) ([]exportMember, error
 	if all, err := loadMemberLite(h.DB); err == nil {
 		lite = all
 	}
+	// 过继/收养关系（嗣父、养父）→ 导出的「嗣父」「养父」两列
+	if ars, err := h.DB.Query(`SELECT a.member_id, a.father_id, COALESCE(f.name,''), COALESCE(a.father_text,''), COALESCE(a.mother_id,0), COALESCE(mo.name,''), COALESCE(a.kind,'嗣父')
+		FROM member_adoptions a LEFT JOIN members f ON f.id = a.father_id LEFT JOIN members mo ON mo.id = a.mother_id
+		ORDER BY a.member_id, a.sort_order, a.id`); err == nil {
+		adoptByMember := map[int64][]Adoption{}
+		for ars.Next() {
+			var mid int64
+			var a Adoption
+			if ars.Scan(&mid, &a.FatherID, &a.FatherName, &a.FatherText, &a.MotherID, &a.MotherName, &a.Kind) == nil {
+				adoptByMember[mid] = append(adoptByMember[mid], a)
+			}
+		}
+		ars.Close()
+		for i := range out {
+			out[i].Adoptions = adoptByMember[out[i].ID]
+		}
+	}
 	spouses := map[int64][]string{}
 	spouseTypes := map[int64][]string{}
 	spouseByID := map[int64]string{}
@@ -438,6 +459,25 @@ func exportCell(m exportMember, key string) string {
 		return m.Rank
 	case "clan_type":
 		return m.ClanType
+	case "birth_father_text":
+		return m.BirthFatherText
+	case "foster_names", "raise_names":
+		kind := "嗣父"
+		if key == "raise_names" {
+			kind = "养父"
+		}
+		names := []string{}
+		for _, a := range m.Adoptions {
+			if a.Kind != kind {
+				continue
+			}
+			if a.FatherName != "" {
+				names = append(names, a.FatherName)
+			} else if a.FatherText != "" {
+				names = append(names, a.FatherText)
+			}
+		}
+		return strings.Join(names, "、")
 	case "record_type":
 		return m.RecordType
 	case "father_id":
@@ -1630,6 +1670,35 @@ func (h *MemberIOHandler) decideAction(r *importRow, all map[int64]*memberLite, 
 }
 
 // prepareCreate 组装新增成员
+
+// parseImportAdoptions 解析导入列里的嗣父/养父：多人用「、，,;」分隔；
+// 能在本谱查到同名成员（唯一）就记 father_id，否则原样存成谱外文本。
+func (h *MemberIOHandler) parseImportAdoptions(raw, kind string) []Adoption {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '、' || r == '，' || r == ',' || r == ';' || r == '；' || r == '/'
+	})
+	out := []Adoption{}
+	for _, name := range fields {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		var id int64
+		var cnt int
+		h.DB.QueryRow(`SELECT COUNT(*), COALESCE(MIN(id),0) FROM members WHERE name = ?`, name).Scan(&cnt, &id)
+		if cnt == 1 {
+			out = append(out, Adoption{FatherID: id, Kind: kind})
+		} else {
+			out = append(out, Adoption{FatherText: name, Kind: kind})
+		}
+	}
+	return out
+}
+
 func (h *MemberIOHandler) prepareCreate(r *importRow) error {
 	// 父/母是本表待插入行且校验失败 → 本行也失败
 	if r.FatherPending != nil && r.FatherPending.Action == "error" {
@@ -1696,6 +1765,10 @@ func (h *MemberIOHandler) prepareCreate(r *importRow) error {
 	setStr("rank", &m.Rank)
 	setStr("clan_type", &m.ClanType)
 	setStr("record_type", &m.RecordType)
+	setStr("birth_father_text", &m.BirthFatherText)
+	// 嗣父/养父：多人用「、」「，」「;」分隔；本谱能查到同名成员就存 id，否则留作文本
+	m.Adoptions = append(m.Adoptions, h.parseImportAdoptions(r.Raw["foster_names"], "嗣父")...)
+	m.Adoptions = append(m.Adoptions, h.parseImportAdoptions(r.Raw["raise_names"], "养父")...)
 	setStr("birth_calendar", &m.BirthCalendar)
 	setStr("birth_gregorian", &m.BirthGregorian)
 	setStr("birth_lunar", &m.BirthLunar)

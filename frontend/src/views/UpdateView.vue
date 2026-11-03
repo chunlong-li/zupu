@@ -161,6 +161,34 @@
     <el-card class="section update-log">
       <template #header><span>版本更新日志</span></template>
       <el-collapse v-model="activeLogs">
+                                      <el-collapse-item name="logStable1311">
+            <template #title>
+              <span class="log-title">v1.3.11</span>
+              <span class="log-count">2026-11-03 发布</span>
+            </template>
+            <div class="log-entry">
+              <div class="log-entry-head">
+                <span class="log-ver">v1.3.11</span>
+                <span class="log-date">2026-11-03</span>
+              </div>
+              <div class="log-entry-body">
+                <p><b>全新部署白屏修正（重要）：</b></p>
+                <p>· 修正 <b>全新 docker 部署后打开页面全部 404</b>（只有健康检查正常、容器显示运行中）的问题：程序现在按「目录里确实有 index.html」挑选前端目录，新装数据卷里的空目录不会再被误当成有效目录。</p>
+                <p><b>在线更新稳定性（重要）：</b></p>
+                <p>· 修正 <b>更新后界面一直停在「正在重启」</b>：前端探活原先打到了 <code>/api/health</code>（恒 404），现已改为探测根路径 <code>/health</code>，前后端两处都已修正。</p>
+                <p>· 修正 <b>更新报「text file busy」</b>：替换正在运行的二进制改为「先写临时文件再原子替换」，不再占用中的文件写入。</p>
+                <p>· 自重启改为<b>原地切换新二进制</b>（进程号不变），不再依赖容器的重启策略。</p>
+                <p><b>成员与谱书：</b></p>
+                <p>· 修正 <b>编辑成员后，下一位成员会带着上一位的出生日期</b>的问题。</p>
+                <p>· 修正 <b>谱书里排行写阿拉伯数字无效</b>（排序退回出生日期）的问题。</p>
+                <p><b>新增「过继 / 收养」录入：</b></p>
+                <p>· 成员编辑新增「父母」区块：<b>生父/生母、嗣父/嗣母、养父/养母</b>；嗣父可多条（兼祧）；选父自动带出其配偶作为母的候选，并自动改宗法（嗣子 / 养子）。</p>
+                <p>· <b>出继 / 入继 / 收养</b> 在四张世系图与谱书中自动标注：生父下注「出继」、承嗣父下注「入继」（同族）或「收养」（外姓）；五世图生父栏只写「出继某某为嗣」，嗣父栏保留完整资料，承嗣子单独统计为「嗣子N」。</p>
+                <p>· 新增宗法类型 <b>「出继外姓」</b>（本族子弟出继给外姓人家，不记养父）。</p>
+                <p>· 导入导出新增 <b>「生父(谱外)」「嗣父」「养父」</b> 三列。</p>
+              </div>
+            </div>
+          </el-collapse-item>
                                       <el-collapse-item name="logStable1310">
             <template #title>
               <span class="log-title">v1.3.10</span>
@@ -1878,7 +1906,7 @@ function compareVersion(a, b) {
 onMounted(async () => {
   try {
     const { data } = await api.get('/settings/version')
-    currentVersion.value = data.version || '1.3.10'
+    currentVersion.value = data.version || '1.3.11'
   } catch (e) { /* ignore */ }
   checkManifestUpdate() // 打开页面自动检查一次更新
 })
@@ -1967,21 +1995,34 @@ async function doUpdateFromServer(pkgArg = null, skipConfirm = false) {
   }
 }
 
+// 探活：必须直接打**根路径** /health。
+// 不能走 api 实例——它 baseURL=/api，api.get('/health') 实际请求 /api/health（历史上恒 404，
+// 导致"更新完一直停在正在重启…"）。
+async function probeHealth(timeout = 3000) {
+  const ctl = new AbortController()
+  const t = setTimeout(() => ctl.abort(), timeout)
+  try {
+    const r = await fetch('/health', { cache: 'no-store', signal: ctl.signal })
+    return r.ok
+  } catch (e) {
+    return false
+  } finally {
+    clearTimeout(t)
+  }
+}
+
 // 轮询健康检查，服务恢复后自动刷新（更新与回滚共用）
 function waitAndReload() {
   setTimeout(() => {
     let waited = 0
     const timer = setInterval(async () => {
       waited += 2000
-      try {
-        await api.get('/health', { timeout: 3000 })
+      if (await probeHealth()) {
         clearInterval(timer)
         location.reload()
-      } catch (e) {
-        if (waited > 60000) {
-          clearInterval(timer)
-          ElMessage.error('服务重启超时，请手动刷新')
-        }
+      } else if (waited > 60000) {
+        clearInterval(timer)
+        ElMessage.error('服务重启超时，请手动刷新')
       }
     }, 2000)
   }, 3000)
@@ -2067,16 +2108,13 @@ function waitServiceUp(onUp) {
   let waited = 0
   const timer = setInterval(async () => {
     waited += 2000
-    try {
-      await api.get('/health', { timeout: 3000 })
+    if (await probeHealth()) {
       clearInterval(timer)
       if (onUp) onUp()
-    } catch (e) {
-      if (waited > 120000) {
-        clearInterval(timer)
-        progressStage.value = 'error'
-        progressText.value = '服务重启超时，请手动刷新页面'
-      }
+    } else if (waited > 120000) {
+      clearInterval(timer)
+      progressStage.value = 'error'
+      progressText.value = '服务重启超时，请手动刷新页面'
     }
   }, 2000)
 }

@@ -45,7 +45,17 @@
                           <div class="m-name">{{ m.name }}</div>
                           <div class="m-detail">
                             <div v-for="(d, di) in fields(m)" :key="di" class="d-col">{{ d }}</div>
-                            <div v-if="m.children || m.no_heir || m.lost_contact" class="d-col son-block">
+                            <!-- 嗣子：独立一列，样式与「生子」完全一致 -->
+                          <div v-if="m.adopt_children" class="d-col son-block">
+                            <div class="sg-label">{{ m.adopt_children }}</div>
+                            <div class="sg-names" v-if="m.adopt_son_list && m.adopt_son_list.length">
+                              <div v-for="s in m.adopt_son_list" :key="'as' + s.id" class="son-cell">
+                                <div class="son-name">{{ s.name }}</div>
+                                <div class="son-page" v-if="bioPageMap[s.id]" @click.stop="jumpToBio(bioPageMap[s.id])">{{ bioPageMap[s.id] }}</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div v-if="m.children || m.no_heir || m.lost_contact" class="d-col son-block">
                               <div v-if="m.lost_contact" class="sg-label">{{ lostTxt(m, false) }}</div>
                               <template v-else-if="m.no_heir && !(m.sons && m.sons.length)">
                                 <div class="sg-label">無嗣</div>
@@ -152,10 +162,24 @@
                   <!-- 左半：同一行排不下的成員（緊貼版心續排） -->
                   <div class="part left">
                     <div class="members">
-                      <div v-for="m in r.left" :key="'l' + m.id" class="memb">
+                      <div v-for="m in r.left" :key="'l' + (m.uid || m.id)" class="memb">
                         <div class="m-name">{{ m.name }}</div>
-                        <div class="m-detail">
+                        <div v-if="m.out_copy" class="m-detail">
+                          <div class="d-col">{{ m.adopt }}</div>
+                        </div>
+                        <div v-else class="m-detail">
                           <div v-for="(d, di) in fields(m)" :key="di" class="d-col">{{ d }}</div>
+                          <div v-if="m.adopt" class="d-col">{{ m.adopt }}</div>
+                          <!-- 嗣子：独立一列，样式与「生子」完全一致 -->
+                          <div v-if="m.adopt_children" class="d-col son-block">
+                            <div class="sg-label">{{ m.adopt_children }}</div>
+                            <div class="sg-names" v-if="m.adopt_son_list && m.adopt_son_list.length">
+                              <div v-for="s in m.adopt_son_list" :key="'as' + s.id" class="son-cell">
+                                <div class="son-name">{{ s.name }}</div>
+                                <div class="son-page" v-if="bioPageMap[s.id]" @click.stop="jumpToBio(bioPageMap[s.id])">{{ bioPageMap[s.id] }}</div>
+                              </div>
+                            </div>
+                          </div>
                           <div v-if="m.children || m.no_heir || m.lost_contact" class="d-col son-block">
                               <div v-if="m.lost_contact" class="sg-label">{{ lostTxt(m, false) }}</div>
                               <template v-else-if="m.no_heir && !(m.sons && m.sons.length)">
@@ -182,10 +206,24 @@
                       <div class="gen-tag">第{{ r.gen }}世</div>
                     </div>
                     <div class="members">
-                      <div v-for="m in r.right" :key="'r' + m.id" class="memb">
+                      <div v-for="m in r.right" :key="'r' + (m.uid || m.id)" class="memb">
                         <div class="m-name">{{ m.name }}</div>
-                        <div class="m-detail">
+                        <div v-if="m.out_copy" class="m-detail">
+                          <div class="d-col">{{ m.adopt }}</div>
+                        </div>
+                        <div v-else class="m-detail">
                           <div v-for="(d, di) in fields(m)" :key="di" class="d-col">{{ d }}</div>
+                          <div v-if="m.adopt" class="d-col">{{ m.adopt }}</div>
+                          <!-- 嗣子：独立一列，样式与「生子」完全一致 -->
+                          <div v-if="m.adopt_children" class="d-col son-block">
+                            <div class="sg-label">{{ m.adopt_children }}</div>
+                            <div class="sg-names" v-if="m.adopt_son_list && m.adopt_son_list.length">
+                              <div v-for="s in m.adopt_son_list" :key="'as' + s.id" class="son-cell">
+                                <div class="son-name">{{ s.name }}</div>
+                                <div class="son-page" v-if="bioPageMap[s.id]" @click.stop="jumpToBio(bioPageMap[s.id])">{{ bioPageMap[s.id] }}</div>
+                              </div>
+                            </div>
+                          </div>
                           <div v-if="m.children || m.no_heir || m.lost_contact" class="d-col son-block">
                               <div v-if="m.lost_contact" class="sg-label">{{ lostTxt(m, false) }}</div>
                               <template v-else-if="m.no_heir && !(m.sons && m.sons.length)">
@@ -783,6 +821,8 @@ function bioText(m) {
   if (m.lost_contact) a.push(lostTxt(m))
   else if (m.birth_death) a.push(m.birth_death)
   if (m.burial) a.push(m.burial)
+  // 出繼/入繼/養子（嗣父、養父）
+  if (m.adopt) a.push(m.adopt)
   if (m.bio) a.push(m.bio)
   // 無嗣：名下無子者，行傳正文末注「無嗣」
   if (m.no_heir && !(m.sons && m.sons.length)) a.push('無嗣')
@@ -1105,7 +1145,7 @@ const bioCols = computed(() => {
   const out = []
   ;[...gens.keys()].sort((a, b) => a - b).forEach((gen) => {
     gens.get(gen).forEach((m) => {
-      out.push({ key: 'm' + m.id, id: m.id, gen, rel: m.rel || '', name: m.name, text: bioText(m),
+      out.push({ key: 'm' + (m.uid || m.id), id: m.id, gen, rel: m.rel || '', name: m.name, text: bioText(m),
                  foot: sourceFoot(sourceMap.value, m.id, '據：') })
       ;(m.spouses || []).forEach((s, i) => {
         out.push({ key: 's' + m.id + '_' + i, id: 0, gen: 0, rel: s.rel || '配', name: s.name, text: spouseText(s), foot: '' })

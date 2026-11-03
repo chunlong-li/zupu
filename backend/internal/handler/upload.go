@@ -2,9 +2,9 @@ package handler
 
 import (
 	"database/sql"
-	"log"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -100,11 +100,11 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 
 	id, _ := res.LastInsertId()
 	c.JSON(http.StatusOK, Attachment{
-		ID:       id,
-		MemberID: memberID,
-		SpouseID: spouseID,
-		Category: category,
-		Path:     relPath,
+		ID:          id,
+		MemberID:    memberID,
+		SpouseID:    spouseID,
+		Category:    category,
+		Path:        relPath,
 		Description: description,
 	})
 }

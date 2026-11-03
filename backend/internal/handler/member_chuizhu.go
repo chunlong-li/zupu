@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -43,8 +44,14 @@ type ChuiZhuMember struct {
 	BirthKnown      bool            `json:"birth_known"`
 	DeathKnown      bool            `json:"death_known"`
 	BurialKnown     bool            `json:"burial_known"`
-	BirthStr        string          `json:"birth_str"` // 已格式化生（如「生雍正十年…」），未詳為空
-	DeathStr        string          `json:"death_str"` // 已格式化殊（如「殊民國十年」），未詳為空
+	BirthStr        string          `json:"birth_str"`      // 已格式化生（如「生雍正十年…」），未詳為空
+	DeathStr        string          `json:"death_str"`      // 已格式化殊（如「殊民國十年」），未詳為空
+	Adopt           string          `json:"adopt"`          // 出繼/入繼/養子 說明（嗣父、養父）
+	AdoptSons       string          `json:"adopt_sons"`     // 本人是嗣父/養父：嗣子某某、養子某某
+	AdoptChildren   string          `json:"adopt_children"` // 承嗣子计数：嗣子N／养子N
+	AdoptSonList    []ChuiZhuSon    `json:"adopt_son_list"` // 承嗣子列表（名 + id）
+	UID             string          `json:"uid"`            // 渲染用唯一键（出繼副本與本人同 id）
+	OutCopy         bool            `json:"out_copy"`       // 生父欄的「出繼」副本：只寫一句出繼說明
 }
 
 // ChuiZhuSon 垂珠体图上「生子N」下要列的某个儿子
@@ -89,6 +96,12 @@ type chuiZhuNode struct {
 	spouses                                             []chuiZhuSpouse
 	children                                            []*chuiZhuNode
 	span                                                int
+	adopt                                               string // 出继/入继/养子 说明文字（谱书行传用）
+	adoptSons                                           string // 本人是嗣父/养父时：嗣子某某、养子某某
+	uid                                                 string // 渲染用唯一键（出继副本与本人同 id）
+	outCopy                                             bool   // 生父栏里的「出继」副本：只写一句出继说明
+	adoptedIn                                           bool   // 本人是被这一家过继/收养进来的（算嗣子/养子，不算生子）
+	birthFatherText                                     string // 入继：生父在谱外的文本
 }
 
 type chuiZhuSpouse struct {
@@ -221,6 +234,73 @@ func (h *MemberHandler) ListChuiZhu(c *gin.Context) {
 		}
 	}
 
+	// 出继/入继/养子：把过继关系（可多个嗣父/养父）拼成谱书行传用的说明文字
+	adoptMap := map[int64][]Adoption{}
+	if arows, aerr := h.DB.Query(`SELECT a.member_id, a.father_id, COALESCE(m.name,''), a.father_text, a.kind
+		FROM member_adoptions a LEFT JOIN members m ON m.id = a.father_id ORDER BY a.member_id, a.sort_order, a.id`); aerr == nil {
+		for arows.Next() {
+			var mid int64
+			var a Adoption
+			if arows.Scan(&mid, &a.FatherID, &a.FatherName, &a.FatherText, &a.Kind) == nil {
+				adoptMap[mid] = append(adoptMap[mid], a)
+			}
+		}
+		arows.Close()
+	}
+	if brows, berr2 := h.DB.Query(`SELECT id, COALESCE(birth_father_text,'') FROM members`); berr2 == nil {
+		for brows.Next() {
+			var mid int64
+			var txt string
+			if brows.Scan(&mid, &txt) == nil {
+				if n, ok := byID[mid]; ok {
+					n.birthFatherText = strings.TrimSpace(txt)
+				}
+			}
+		}
+		brows.Close()
+	}
+	// 反过来：某人作为嗣父/养父，名下有哪些嗣子/养子（写在「他本人」那一格里）
+	adoptSonsOf := map[int64][]string{}
+	for memberID, ads := range adoptMap {
+		for _, a := range ads {
+			if a.FatherID <= 0 {
+				continue
+			}
+			nm := ""
+			if n, ok := byID[memberID]; ok {
+				nm = n.name
+			}
+			if nm == "" {
+				continue
+			}
+			label := "嗣子"
+			if a.Kind == "养父" {
+				label = "养子"
+			}
+			adoptSonsOf[a.FatherID] = append(adoptSonsOf[a.FatherID], label+nm)
+		}
+	}
+	for id, n := range byID {
+		if v, ok := adoptSonsOf[id]; ok {
+			n.adoptSons = strings.Join(v, "、")
+		}
+		ads := adoptMap[id]
+		// 入继：生父在谱外（father_id=0）且本谱有嗣父 → 谱书上挂到嗣父名下承嗣
+		if n.fatherID == 0 && n.birthFatherText != "" {
+			for _, a := range ads {
+				if strings.TrimSpace(a.Kind) != "养父" && a.FatherID > 0 {
+					n.fatherID = a.FatherID
+					n.adoptedIn = true
+					break
+				}
+			}
+		}
+		n.adopt = adoptionText(n, ads)
+		if n.adopt == "" && n.clanType == "出继外姓" {
+			n.adopt = "出继外姓"
+		}
+	}
+
 	// 招赘续房：女儿若①自身 clan_type 标了「入赘/招赘/赘婿」，②或名下有子女（孩子的 father_id 指向她），
 	// 说明这一支是招赘续香火——即使开关关闭也保留（按男丁世系显示，子女照常入图）
 	childCount := map[int64]int{}
@@ -255,6 +335,66 @@ func (h *MemberHandler) ListChuiZhu(c *gin.Context) {
 			if p, ok := byID[n.fatherID]; ok && includeNode(p) {
 				p.children = append(p.children, n)
 			}
+		}
+	}
+	// 出继/入继/收养：本人挂承嗣父（子嗣随之），生父下再挂一个「出继」副本（叶子，uid 区分）
+	{
+		childParent := map[int64]*chuiZhuNode{}
+		for _, p := range nodes {
+			for _, c := range p.children {
+				childParent[c.id] = p
+			}
+		}
+		fosterOf := func(id int64) int64 {
+			var fid int64
+			for _, a := range adoptMap[id] {
+				if a.Kind == "嗣父" && a.FatherID > 0 {
+					return a.FatherID
+				}
+			}
+			for _, a := range adoptMap[id] {
+				if a.Kind == "养父" && a.FatherID > 0 {
+					fid = a.FatherID
+					break
+				}
+			}
+			return fid
+		}
+		for id, n := range byID {
+			fosterID := fosterOf(id)
+			if fosterID == 0 || fosterID == n.fatherID {
+				continue
+			}
+			foster, ok := byID[fosterID]
+			if !ok {
+				continue
+			}
+			bioParent := childParent[id]
+			if bioParent == nil {
+				continue
+			}
+			// 从生父下摘掉本人
+			kept := bioParent.children[:0]
+			for _, c := range bioParent.children {
+				if c.id != id {
+					kept = append(kept, c)
+				}
+			}
+			bioParent.children = kept
+			// 挂到承嗣父下（子嗣仍跟着本人）；fatherID 一并改，关系字（長子/次子）才按新父算
+			foster.children = append(foster.children, n)
+			n.fatherID = fosterID
+			n.adoptedIn = true
+			n.adopt = "" // 承嗣父那边只要正常的详细资料，不再重复写出继说明
+			// 生父下放副本：叶子、标「出继」
+			cp := *n
+			cp.children = nil
+			cp.uid = fmt.Sprintf("%d-out", id)
+			cp.adopt = "出继" + foster.name + "为嗣"
+			cp.adoptSons = ""
+			cp.outCopy = true
+			cp.adoptedIn = false // 对生父来说他是亲生的（只是出继出去了）
+			bioParent.children = append(bioParent.children, &cp)
 		}
 	}
 	for _, n := range nodes {
@@ -433,12 +573,20 @@ func buildChuiZhuPage(head *chuiZhuNode, startGen, idx int) (ChuiZhuPage, []*chu
 }
 
 func chuiZhuToMember(n *chuiZhuNode) ChuiZhuMember {
-	sons := []ChuiZhuSon{}
+	bioSons := []ChuiZhuSon{}
+	adoptSons := []ChuiZhuSon{}
 	for _, c := range n.children {
-		if c.gender != 2 { // 2=女，其余（男/未知）计为子
-			sons = append(sons, ChuiZhuSon{ID: c.id, Name: chuiZhuName(c)})
+		if c.gender == 2 { // 2=女，不计入子
+			continue
+		}
+		item := ChuiZhuSon{ID: c.id, Name: chuiZhuName(c)}
+		if c.adoptedIn {
+			adoptSons = append(adoptSons, item)
+		} else {
+			bioSons = append(bioSons, item)
 		}
 	}
+	sons := bioSons
 	spouses := []ChuiZhuSpouse{}
 	for _, s := range n.spouses {
 		spouses = append(spouses, ChuiZhuSpouse{
@@ -450,17 +598,23 @@ func chuiZhuToMember(n *chuiZhuNode) ChuiZhuMember {
 		})
 	}
 	return ChuiZhuMember{
-		ID:    n.id,
-		Name:  chuiZhuName(n),
-		Rel:   n.rel,
-		Rank:  n.rank,
-		Zihao: formatZihao(n.zi, n.hao),
+		ID:        n.id,
+		Name:      chuiZhuName(n),
+		Rel:       n.rel,
+		Rank:      n.rank,
+		Adopt:     n.adopt,
+		AdoptSons: n.adoptSons,
+		UID:       n.uid,
+		OutCopy:   n.outCopy,
+		Zihao:     formatZihao(n.zi, n.hao),
 		BirthDeath: formatBirthDeathCN(n.birth, n.birthLunar, n.birthGanzhi, n.birthEra,
 			n.death, n.deathLunar, n.deathGanzhi, n.deathEra),
 		BirthDeathShort: formatBirthDeathShort(n.birth, n.birthEra, n.death, n.deathEra),
 		Spouse:          formatSpouseOld(n.spouses),
 		Burial:          formatBurial(n.burial),
-		Children:        formatChildren(len(sons)),
+		Children:        formatChildren(len(bioSons)),
+		AdoptChildren:   formatAdoptChildren(len(adoptSons)),
+		AdoptSonList:    adoptSons,
 		Sons:            sons,
 		Bio:             n.bio,
 		Spouses:         spouses,
@@ -705,6 +859,13 @@ func formatBurial(burial string) string {
 	return "葬" + burial
 }
 
+func formatAdoptChildren(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return "嗣子" + strconv.Itoa(n)
+}
+
 func formatChildren(sons int) string {
 	if sons <= 0 {
 		return ""
@@ -712,24 +873,19 @@ func formatChildren(sons int) string {
 	return "生子" + strconv.Itoa(sons)
 }
 
+// rankNumFor 排行 → 序数。谱书里常见的写法都必须能排：
+//
+//	「1 / 3 / 行3 / 行十二 / 三 / 长子 / 次子 / 十五 / 幼」
+//
+// 以前这里只认「行N」+ 一张中文固定表，**纯阿拉伯数字（1、2、3）直接返回 0**，
+// 于是被当成"没填排行"，排序退回出生日期 → id，表现为"排行写数字无效"。
+// 现直接复用传记排序用的 rankNumber（阿拉伯数字 → 长/次 → 中文数字）。
 func rankNumFor(rank string) int {
-	r := strings.TrimSpace(rank)
-	if r == "" {
-		return 0
-	}
-	if strings.HasPrefix(r, "行") {
-		if n, err := strconv.Atoi(strings.TrimPrefix(r, "行")); err == nil {
-			return n
-		}
-	}
-	cn := map[string]int{
-		"长": 1, "次": 2, "三": 3, "四": 4, "五": 5,
-		"六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
-		"长子": 1, "次子": 2, "三子": 3, "四子": 4, "五子": 5,
-		"六子": 6, "七子": 7, "八子": 8, "九子": 9, "十子": 10,
-	}
-	if n, ok := cn[r]; ok {
+	if n := rankNumber(rank); n > 0 {
 		return n
+	}
+	if strings.ContainsAny(rank, "幼末") {
+		return 99 // 幼子/末子排最后（与前端口径一致）
 	}
 	return 0
 }
@@ -751,4 +907,39 @@ func sortChildren(nodes []*chuiZhuNode) {
 		}
 		return nodes[i].id < nodes[j].id
 	})
+}
+
+// adoptionText 把过继/收养关系拼成谱书行传里的文言说明：
+//
+//	出继某为嗣 / 自某处入继某为嗣 / 某养子（兼祧的多个嗣父用「、」连接）
+func adoptionText(n *chuiZhuNode, ads []Adoption) string {
+	var fosters, raises []string
+	for _, a := range ads {
+		name := strings.TrimSpace(a.FatherName)
+		if name == "" {
+			name = strings.TrimSpace(a.FatherText)
+		}
+		if name == "" {
+			continue
+		}
+		if strings.TrimSpace(a.Kind) == "养父" {
+			raises = append(raises, name)
+		} else {
+			fosters = append(fosters, name)
+		}
+	}
+	var parts []string
+	if len(fosters) > 0 {
+		who := strings.Join(fosters, "、")
+		if n.adoptedIn {
+			// 生父在谱外（外姓/外族）→ 收养；同族之间才是入继
+			parts = append(parts, "自"+n.birthFatherText+"收养，为"+who+"嗣子")
+		} else {
+			parts = append(parts, "出继"+who+"为嗣")
+		}
+	}
+	for _, r := range raises {
+		parts = append(parts, r+"养子")
+	}
+	return strings.Join(parts, "，")
 }

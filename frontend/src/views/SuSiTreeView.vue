@@ -122,13 +122,12 @@
             </g>
           </g>
           <!-- 失考 / 無嗣 標注：節點框下方連線 + 灰框（與寶塔式一致） -->
-          <g v-for="n in annotNodes" :key="'mk' + n.id">
-            <path :d="`M${n.x + NODE_W / 2} ${n.y + NODE_H} L${n.x + NODE_W / 2} ${n.y + NODE_H + 8}`" stroke="#8c5a3c" stroke-width="1.5" fill="none" />
-            <rect :x="n.x + NODE_W / 2 - n.mkBoxW / 2" :y="n.y + NODE_H + 8" :width="n.mkBoxW" :height="n.mkBoxH" rx="6"
-              fill="#d9d9d9" stroke="#8c5a3c" stroke-width="1.2" />
-            <text v-for="(ln, li) in n.mkLines" :key="li" :x="n.x + NODE_W / 2"
-              :y="n.y + NODE_H + 8 + n.mkBoxH / 2 + n.mkFs * 0.36 - ((n.mkLines.length - 1) * n.mkLineH) / 2 + li * n.mkLineH"
-              text-anchor="middle" :font-size="n.mkFs" fill="#8c5a3c">{{ ln }}</text>
+          <g v-for="n in annotNodes" :key="'mk' + (n._uid || n.id)">
+            <text v-for="(col, ci) in n.mkCols" :key="ci">
+              <tspan v-for="(ch, li) in col" :key="li"
+                :x="n.x - 10 - ci * 13" :y="n.y + 12 + li * 12"
+                text-anchor="middle" font-size="11" fill="#8c5a3c">{{ ch }}</tspan>
+            </text>
           </g>
         </g>
       </svg>
@@ -320,9 +319,21 @@ const tree = computed(() => {
 
   // 2. 掛父子關係；找不到父的作為根
   const roots = []
+  // 出繼/入繼/收養：承嗣父下掛本人（帶子嗣），生父下掛「出繼」副本（不帶子嗣）
   byId.forEach(node => {
-    if (node.father_id && byId.has(node.father_id)) {
-      byId.get(node.father_id).children.push(node)
+    if (node.clan_type === '出继外姓') node._outMark = '出继外姓'
+    const bioId = node.father_id || 0
+    const adoptId = node.adopt_father_id || 0
+    const useAdopt = adoptId > 0 && adoptId !== bioId && byId.has(adoptId)
+    if (useAdopt) {
+      byId.get(adoptId).children.push(node)
+      node._inMark = bioId > 0 ? '入繼' : '收養'
+      node._outMark = node._outMark || ''
+      if (bioId > 0 && byId.has(bioId)) {
+        byId.get(bioId).children.push({ ...node, children: [], _outMark: '出繼', _inMark: '', _uid: node.id + '-out' })
+      }
+    } else if (bioId && byId.has(bioId)) {
+      byId.get(bioId).children.push(node)
     } else {
       roots.push(node)
     }
@@ -331,6 +342,11 @@ const tree = computed(() => {
   // 3. 兄弟按長幼排序
   byId.forEach(node => sortSiblings(node.children))
   roots.sort((a, b) => a.generation - b.generation || a.id - b.id)
+
+  // 全部節點（含生父下的「出繼」副本），參與佈局與繪製
+  const allNodes = []
+  const collectAll = (n) => { allNodes.push(n); (n.children || []).forEach(collectAll) }
+  roots.forEach(collectAll)
 
   // 女兒（若顯示）作為末端節點：不延續子孫
   byId.forEach(node => {
@@ -377,7 +393,7 @@ const tree = computed(() => {
   // 6. 計算 x/y
   const minGen = Math.min(...list.map(m => m.generation))
   const layoutNodes = []
-  byId.forEach(node => {
+  allNodes.forEach(node => {
     const xCenter = node._absCenter * LEAF_SPACING + SIDE_MARGIN
     const x = xCenter - NODE_W / 2
     const y = TOP_MARGIN + (node.generation - minGen) * V_GAP
@@ -405,16 +421,18 @@ const tree = computed(() => {
     const noKids = !(n.children && n.children.length)
     let txt = ''
     if (n.lost_contact) txt = lostContactText(memberKnown(n), !noKids, false)
+    else if (n._outMark) txt = n._outMark
+    else if (n._inMark) txt = n._inMark
     else if (n.no_heir && noKids) txt = NO_HEIR_TRAD
     if (!txt) return
-    const lines = txt.split('，')
-    const maxLen = Math.max(...lines.map(l => l.length))
     n.subAnnot = true
-    n.mkLines = lines
-    n.mkFs = n.lost_contact ? 12 : 17
-    n.mkLineH = 16
-    n.mkBoxW = n.lost_contact ? Math.max(60, maxLen * 13 + 16) : 60
-    n.mkBoxH = n.lost_contact ? lines.length * 16 + 10 : 30
+    // 每個短語一列，列內豎排；短語超過 6 字再折列
+    const cols = []
+    String(txt).split('，').forEach(ph => {
+      const chars = Array.from(ph)
+      for (let i = 0; i < chars.length; i += 6) cols.push(chars.slice(i, i + 6))
+    })
+    n.mkCols = cols
   })
   // 8. 外纪/内纪分离：外纪在上、内纪在下，重编号外纪，中间拉远
   const hasWaiji = layoutNodes.some(n => n.record_type === '外纪')
@@ -452,14 +470,27 @@ const tree = computed(() => {
 
   // 9. 垂絲連線
   const connections = []
+  const byIdList = {}
+  layoutNodes.forEach(n => { (byIdList[n.id] = byIdList[n.id] || []).push(n) })
+  const pick = (parent, id) => {
+    const cands = byIdList[id]
+    if (!cands || !cands.length) return null
+    if (cands.length === 1) return cands[0]
+    let best = cands[0], bd = Infinity
+    for (const c of cands) {
+      const d = Math.abs(c.x - parent.x) + Math.abs(c.y - parent.y)
+      if (d < bd) { bd = d; best = c }
+    }
+    return best
+  }
   byId.forEach(node => {
     const kids = node.children
     if (!kids.length) return
-    const f = layoutNodes.find(n => n.id === node.id)
+    const f = pick(node, node.id)
     if (!f) return
     const fx = f.x + NODE_W / 2
     const fyBottom = f.y + NODE_H
-    const kidNodes = kids.map(k => layoutNodes.find(n => n.id === k.id)).filter(Boolean)
+    const kidNodes = kids.map(k => pick(f, k.id) || layoutNodes.find(n => n.id === k.id)).filter(Boolean)
     if (!kidNodes.length) return
 
     if (kids.length === 1) {

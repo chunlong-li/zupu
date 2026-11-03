@@ -170,7 +170,6 @@ func (h *BioHandler) applyDeleteMemberBio(id int64) error {
 	return err
 }
 
-
 // —— 配偶生平条目 ——
 
 // SpouseBioEntry 配偶生平条目

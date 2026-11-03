@@ -69,7 +69,7 @@
           <!-- 节点 -->
           <g v-for="n in nodes" :key="'n' + n.id">
             <!-- 主成员：圈 + 排行 + 竖排姓名 -->
-            <g class="p-node" :data-mid="n.id" @click="goMember(n.id)">
+            <g class="p-node" :data-mid="n.id" @click="goMember(n.mid || n.id)">
               <circle :cx="n.cx" :cy="n.y" :r="R"
                       :fill="n.female ? '#8c2b1e' : '#fffdf6'"
                       :stroke="n.female ? '#5f1a11' : '#8c5a3c'"
@@ -174,6 +174,7 @@ const CN_NUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8,
 const CN_DIGIT = '〇一二三四五六七八九'
 const MARK_TEXT = {
   失: '失（迁居失联）', 夭: '夭（幼年早逝，殁时未满 14 岁）', 入: '入（嗣子）', 养: '养（养子）', 出: '出（出继，有嗣父）',
+  收: '收（收养，外姓进来）', 外: '外（出继外姓）',
   赘: '赘（入赘）', 祧: '祧（兼祧）', 迁: '迁（迁居外地）', 止: '止（无嗣无子女）'
 }
 
@@ -399,9 +400,26 @@ function isEarlyDeath(m) {
 
 // ===== 布局：一行一辈（最上为第一世）；层内先按长幼排序，再由下往上把父居中于子嗣组 =====
 const layout = computed(() => {
-  const list = members.value || []
+  const base = members.value || []
   const empty = { nodes: [], connections: [], rows: [], w: 1000, h: 400 }
-  if (!list.length) return empty
+  if (!base.length) return empty
+
+  // 出继/入继/收养：本人挂承嗣父（子嗣跟着走）；生父下再挂一个「出继」副本（叶子，id 取负避免与本人冲突）
+  const ids = new Set(base.map(m => m.id))
+  const list = []
+  base.forEach(m => {
+    const bioId = m.father_id || 0
+    const adoptId = m.adopt_father_id || 0
+    if (adoptId > 0 && adoptId !== bioId && ids.has(adoptId)) {
+      list.push({ ...m, father_id: adoptId, _inMark: bioId > 0 ? '入' : '收', _realId: m.id })
+      if (bioId > 0 && ids.has(bioId)) {
+        list.push({ ...m, id: -m.id, father_id: bioId, adopt_father_id: 0,
+          _outMark: '出', _uid: m.id + '-out', _realId: m.id })
+      }
+    } else {
+      list.push(m)
+    }
+  })
 
   const byId = new Map()
   list.forEach(m => byId.set(m.id, m))
@@ -454,22 +472,26 @@ const layout = computed(() => {
   //    止 = no_heir 且无子女；出嫁不做标记、传记标记不做
   const migratedIds = parseMigratedIds(migrations.value, byId)
   const markOf = new Map()
-  const stat = { 失: 0, 夭: 0, 入: 0, 养: 0, 出: 0, 赘: 0, 祧: 0, 迁: 0, 止: 0, bothChuRu: 0, 夭未解析: 0 }
+  const stat = { 失: 0, 夭: 0, 入: 0, 养: 0, 出: 0, 外: 0, 收: 0, 赘: 0, 祧: 0, 迁: 0, 止: 0, bothChuRu: 0, 夭未解析: 0 }
   list.forEach(m => {
     const ct = String(m.clan_type || '')
     const isLost = Number(m.lost_contact) === 1
     const isYao = isEarlyDeath(m)
     const isIn = ct === '嗣子'          // 入（嗣子）
     const isYang = ct === '养子'        // 养（养子）
+    const isWai = ct === '出继外姓'
     const isChu = (m.foster_father_id || 0) > 0
     const isZhui = ct === '入赘'
     const isTiao = ct === '兼祧'
     const isQian = migratedIds.has(Number(m.id))   // 仅该支最顶端
     let mk = ''
-    if (isLost) mk = '失'
+    if (m._outMark) mk = m._outMark
+    else if (m._inMark) mk = m._inMark
+    else if (isLost) mk = '失'
     else if (isYao) mk = '夭'
     else if (isIn) mk = '入'
     else if (isYang) mk = '养'
+    else if (isWai) mk = '外'
     else if (isChu) mk = '出'
     else if (isZhui) mk = '赘'
     else if (isTiao) mk = '祧'
@@ -545,6 +567,7 @@ const layout = computed(() => {
         // 圈内中央字：族内女性＝「女」；族内男性＝留空（排行不再入圈）；配偶＝「配」（见 sps）
         center: isFemaleGender(m.gender) ? '女' : '',
         mark: markOf.get(m.id) || '',
+        mid: m._realId || m.id,
         spouses: sps,
         y: rowTop + ROW_TOP + R
       }

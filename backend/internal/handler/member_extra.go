@@ -1,12 +1,12 @@
 package handler
 
 import (
-	"time"
-	"strings"
-	"sort"
 	"database/sql"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,7 +36,7 @@ func (h *MemberHandler) Search(c *gin.Context) {
 		var m Member
 		if err := rows.Scan(&m.ID, &m.Generation, &m.Branch, &m.BranchID, &m.Surname, &m.GivenName, &m.Name, &m.Zi, &m.Hao,
 			&m.GenerationWord, &m.Rank, &m.Gender, &m.FatherID, &m.MotherID, &m.MotherSpouseID,
-			&m.ClanType, &m.RecordType, &m.FosterFatherID, &m.BirthCalendar, &m.BirthGregorian, &m.BirthLunar, &m.BirthGanzhi, &m.BirthEra,
+			&m.ClanType, &m.RecordType, &m.FosterFatherID, &m.BirthFatherText, &m.BirthCalendar, &m.BirthGregorian, &m.BirthLunar, &m.BirthGanzhi, &m.BirthEra,
 			&m.DeathGregorian, &m.DeathLunar, &m.DeathGanzhi, &m.DeathEra, &m.Lifespan,
 			&m.NativePlace, &m.CurrentPlace, &m.Title, &m.Occupation, &m.Education, &m.Biography, &m.BurialPlace, &m.Portrait, &m.MarriedOut, &m.FormerName, &m.Phone); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -95,12 +95,12 @@ func (h *MemberHandler) GetWithSpouses(c *gin.Context) {
 
 	var m Member
 	err := h.DB.QueryRow(`SELECT id, generation, branch, branch_id, surname, given_name, name, zi, hao, generation_word,
-		rank, gender, father_id, mother_id, mother_spouse_id, clan_type, record_type, foster_father_id,
+		rank, gender, father_id, mother_id, mother_spouse_id, clan_type, record_type, foster_father_id, birth_father_text,
 		birth_calendar, birth_gregorian, birth_lunar, birth_ganzhi, birth_era, death_gregorian, death_lunar, death_ganzhi, death_era,
 		lifespan, native_place, current_place, title, occupation, education, biography, burial_place, portrait, married_out, former_name, phone, dna_haploid, dna_diploid, dna_mito
 		FROM members WHERE id = ?`, id).Scan(&m.ID, &m.Generation, &m.Branch, &m.BranchID, &m.Surname, &m.GivenName, &m.Name, &m.Zi, &m.Hao,
 		&m.GenerationWord, &m.Rank, &m.Gender, &m.FatherID, &m.MotherID, &m.MotherSpouseID,
-		&m.ClanType, &m.RecordType, &m.FosterFatherID, &m.BirthCalendar, &m.BirthGregorian, &m.BirthLunar, &m.BirthGanzhi, &m.BirthEra,
+		&m.ClanType, &m.RecordType, &m.FosterFatherID, &m.BirthFatherText, &m.BirthCalendar, &m.BirthGregorian, &m.BirthLunar, &m.BirthGanzhi, &m.BirthEra,
 		&m.DeathGregorian, &m.DeathLunar, &m.DeathGanzhi, &m.DeathEra, &m.Lifespan,
 		&m.NativePlace, &m.CurrentPlace, &m.Title, &m.Occupation, &m.Education, &m.Biography, &m.BurialPlace, &m.Portrait, &m.MarriedOut, &m.FormerName, &m.Phone, &m.DNAHaploid, &m.DNADiploid, &m.DNAMito)
 	if err == sql.ErrNoRows {
@@ -111,6 +111,10 @@ func (h *MemberHandler) GetWithSpouses(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// 过继/收养关系（嗣父/养父，可多个）——详情页的编辑框和展示都靠它
+	m.Adoptions = loadAdoptions(h.DB, m.ID)
+	m.fillAdoptFather()
 
 	// 无嗣 / 迁居失联 标记
 	h.DB.QueryRow(`SELECT COALESCE(no_heir,0), COALESCE(lost_contact,0) FROM members WHERE id=?`, id).
@@ -284,7 +288,7 @@ func (h *MemberHandler) Stats(c *gin.Context) {
 		}
 		return out, total, unknown
 	}
-	occOut, occTotal, occUnknown := collectOcc(true)          // 在世（默认）
+	occOut, occTotal, occUnknown := collectOcc(true)           // 在世（默认）
 	occAllOut, occAllTotal, occAllUnknown := collectOcc(false) // 全部
 
 	// ===== 年龄结构（在世者，按出生公历年份估算）=====
@@ -371,28 +375,28 @@ func (h *MemberHandler) Stats(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"total":           total + spouseCount,
-		"alive":           alive + spouseAlive,
-		"deceased":        (total - alive) + (spouseCount - spouseAlive),
-		"male":            male,
-		"female":          female,
-		"spouses":         spouseCount,
-		"spouse_alive":    spouseAlive,
-		"spouse_deceased": spouseCount - spouseAlive,
-		"generations":     genStats,
-		"avg_lifespan":    avgLifespan,
-		"unique_surnames": uniqueSurnames,
-		"unique_branches": uniqueBranches,
-		"occupations":     occOut,
+		"total":                  total + spouseCount,
+		"alive":                  alive + spouseAlive,
+		"deceased":               (total - alive) + (spouseCount - spouseAlive),
+		"male":                   male,
+		"female":                 female,
+		"spouses":                spouseCount,
+		"spouse_alive":           spouseAlive,
+		"spouse_deceased":        spouseCount - spouseAlive,
+		"generations":            genStats,
+		"avg_lifespan":           avgLifespan,
+		"unique_surnames":        uniqueSurnames,
+		"unique_branches":        uniqueBranches,
+		"occupations":            occOut,
 		"occupation_total":       occTotal,
 		"occupation_unknown":     occUnknown,
 		"occupations_all":        occAllOut,
 		"occupation_total_all":   occAllTotal,
 		"occupation_unknown_all": occAllUnknown,
-		"age_groups":      ageGroups,
-		"age_known":       ageKnown,
-		"age_unknown":     ageUnknown,
-		"avg_age":         avgAge,
+		"age_groups":             ageGroups,
+		"age_known":              ageKnown,
+		"age_unknown":            ageUnknown,
+		"avg_age":                avgAge,
 	})
 }
 

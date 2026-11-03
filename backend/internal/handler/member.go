@@ -17,54 +17,58 @@ import (
 
 // Member 成员结构体（对应 members 表）
 type Member struct {
-	ID               int64  `json:"id"`
-	Generation       int    `json:"generation"`
-	Branch           string `json:"branch"`
-	BranchID         int64  `json:"branch_id"`
-	Surname          string `json:"surname"`
-	GivenName        string `json:"given_name"`
-	Name             string `json:"name"`
-	Zi               string `json:"zi"`
-	Hao              string `json:"hao"`
-	GenerationWord   string `json:"generation_word"`
-	Rank             string `json:"rank"`
-	Gender           int    `json:"gender"`
-	FatherID         int64  `json:"father_id"`
-	MotherID         int64  `json:"mother_id"`
-	MotherSpouseID   int64  `json:"mother_spouse_id"`
-	MotherSpouseName string `json:"mother_spouse_name"`
-	ClanType         string `json:"clan_type"`
-	RecordType       string `json:"record_type"`
-	FosterFatherID   int64  `json:"foster_father_id"`
-	SonID            int64  `json:"son_id"`                     // 外纪：选儿子联动，非DB字段
-	AccountPassword  string `json:"account_password,omitempty"` // 新增成员时按姓名算出的初始密码（非DB字段，仅在创建响应里返回；账号在首次登录时才建）
-	BirthCalendar    string `json:"birth_calendar"`             // "solar" or "lunar"
-	BirthGregorian   string `json:"birth_gregorian"`
-	BirthLunar       string `json:"birth_lunar"`
-	BirthGanzhi      string `json:"birth_ganzhi"`
-	BirthEra         string `json:"birth_era"`
-	DeathGregorian   string `json:"death_gregorian"`
-	DeathLunar       string `json:"death_lunar"`
-	DeathGanzhi      string `json:"death_ganzhi"`
-	DeathEra         string `json:"death_era"`
-	Lifespan         int    `json:"lifespan"`
-	NativePlace      string `json:"native_place"`
-	CurrentPlace     string `json:"current_place"`
-	Title            string `json:"title"`
-	Occupation       string `json:"occupation"`
-	Education        string `json:"education"`
-	Biography        string `json:"biography"`
-	BurialPlace      string `json:"burial_place"`
-	Portrait         string `json:"portrait"`
-	MarriedOut       string `json:"married_out"`
-	FormerName       string `json:"former_name"`
-	Phone            string `json:"phone"`
-	DNAHaploid       string `json:"dna_haploid"`
-	DNADiploid       string `json:"dna_diploid"`
-	DNAMito          string `json:"dna_mito"`
-	HasBio           bool   `json:"has_bio"`      // 是否有名人传记（世系图右上角金色卷轴标记）
-	NoHeir           int    `json:"no_heir"`      // 无嗣（1=无嗣，禁止新增子女，图谱标注「无嗣」）
-	LostContact      int    `json:"lost_contact"` // 迁居外地失联（1=存殁未详，不进生日/祭日，图谱标注「存殁未详，子女未详」）
+	ID               int64      `json:"id"`
+	Generation       int        `json:"generation"`
+	Branch           string     `json:"branch"`
+	BranchID         int64      `json:"branch_id"`
+	Surname          string     `json:"surname"`
+	GivenName        string     `json:"given_name"`
+	Name             string     `json:"name"`
+	Zi               string     `json:"zi"`
+	Hao              string     `json:"hao"`
+	GenerationWord   string     `json:"generation_word"`
+	Rank             string     `json:"rank"`
+	Gender           int        `json:"gender"`
+	FatherID         int64      `json:"father_id"`
+	MotherID         int64      `json:"mother_id"`
+	MotherSpouseID   int64      `json:"mother_spouse_id"`
+	MotherSpouseName string     `json:"mother_spouse_name"`
+	ClanType         string     `json:"clan_type"`
+	RecordType       string     `json:"record_type"`
+	FosterFatherID   int64      `json:"foster_father_id"`           // 兼容旧逻辑：= 第一个「嗣父」的成员 id（图谱「出」标记/谱书仍读它）
+	BirthFatherText  string     `json:"birth_father_text"`          // 入继：生父在谱外时的文本（如「城东王氏 王某某」）
+	Adoptions        []Adoption `json:"adoptions"`                  // 过继/收养关系（嗣父/养父，可多个；兼祧＝多个嗣父）
+	AdoptFatherID    int64      `json:"adopt_father_id"`            // 承嗣父（首个「嗣父」，没有则「养父」）——树图双向挂载用
+	AdoptKind        string     `json:"adopt_kind"`                 // 承嗣关系：「嗣父」/「养父」
+	SonID            int64      `json:"son_id"`                     // 外纪：选儿子联动，非DB字段
+	AccountPassword  string     `json:"account_password,omitempty"` // 新增成员时按姓名算出的初始密码（非DB字段，仅在创建响应里返回；账号在首次登录时才建）
+	BirthCalendar    string     `json:"birth_calendar"`             // "solar" or "lunar"
+	BirthGregorian   string     `json:"birth_gregorian"`
+	BirthLunar       string     `json:"birth_lunar"`
+	BirthGanzhi      string     `json:"birth_ganzhi"`
+	BirthEra         string     `json:"birth_era"`
+	DeathGregorian   string     `json:"death_gregorian"`
+	DeathLunar       string     `json:"death_lunar"`
+	DeathGanzhi      string     `json:"death_ganzhi"`
+	DeathEra         string     `json:"death_era"`
+	Lifespan         int        `json:"lifespan"`
+	NativePlace      string     `json:"native_place"`
+	CurrentPlace     string     `json:"current_place"`
+	Title            string     `json:"title"`
+	Occupation       string     `json:"occupation"`
+	Education        string     `json:"education"`
+	Biography        string     `json:"biography"`
+	BurialPlace      string     `json:"burial_place"`
+	Portrait         string     `json:"portrait"`
+	MarriedOut       string     `json:"married_out"`
+	FormerName       string     `json:"former_name"`
+	Phone            string     `json:"phone"`
+	DNAHaploid       string     `json:"dna_haploid"`
+	DNADiploid       string     `json:"dna_diploid"`
+	DNAMito          string     `json:"dna_mito"`
+	HasBio           bool       `json:"has_bio"`      // 是否有名人传记（世系图右上角金色卷轴标记）
+	NoHeir           int        `json:"no_heir"`      // 无嗣（1=无嗣，禁止新增子女，图谱标注「无嗣」）
+	LostContact      int        `json:"lost_contact"` // 迁居外地失联（1=存殁未详，不进生日/祭日，图谱标注「存殁未详，子女未详」）
 }
 
 // MemberHandler 成员处理器
@@ -80,7 +84,7 @@ func (h *MemberHandler) List(c *gin.Context) {
 	includeChildren := c.Query("include_children") == "1" || c.Query("include_children") == "true"
 
 	q := `SELECT id, generation, branch, branch_id, surname, given_name, name, zi, hao, generation_word,
-		rank, gender, father_id, mother_id, mother_spouse_id, clan_type, record_type, foster_father_id,
+		rank, gender, father_id, mother_id, mother_spouse_id, clan_type, record_type, foster_father_id, birth_father_text,
 		birth_calendar, birth_gregorian, birth_lunar, birth_ganzhi, birth_era, death_gregorian, death_lunar, death_ganzhi, death_era,
 		lifespan, native_place, current_place, title, occupation, education, biography, burial_place, portrait, married_out, former_name, phone, dna_haploid, dna_diploid, dna_mito
 		FROM members`
@@ -113,13 +117,34 @@ func (h *MemberHandler) List(c *gin.Context) {
 		var m Member
 		if err := rows.Scan(&m.ID, &m.Generation, &m.Branch, &m.BranchID, &m.Surname, &m.GivenName, &m.Name, &m.Zi, &m.Hao,
 			&m.GenerationWord, &m.Rank, &m.Gender, &m.FatherID, &m.MotherID, &m.MotherSpouseID,
-			&m.ClanType, &m.RecordType, &m.FosterFatherID, &m.BirthCalendar, &m.BirthGregorian, &m.BirthLunar, &m.BirthGanzhi, &m.BirthEra,
+			&m.ClanType, &m.RecordType, &m.FosterFatherID, &m.BirthFatherText, &m.BirthCalendar, &m.BirthGregorian, &m.BirthLunar, &m.BirthGanzhi, &m.BirthEra,
 			&m.DeathGregorian, &m.DeathLunar, &m.DeathGanzhi, &m.DeathEra, &m.Lifespan,
 			&m.NativePlace, &m.CurrentPlace, &m.Title, &m.Occupation, &m.Education, &m.Biography, &m.BurialPlace, &m.Portrait, &m.MarriedOut, &m.FormerName, &m.Phone, &m.DNAHaploid, &m.DNADiploid, &m.DNAMito); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		members = append(members, m)
+	}
+	// 批量附加过继关系（树图要用「承嗣父」做双向挂载）
+	if len(members) > 0 {
+		adoptByMember := map[int64][]Adoption{}
+		if ars, aerr := h.DB.Query(`SELECT a.member_id, a.father_id, COALESCE(f.name,''), COALESCE(a.father_text,''), COALESCE(a.kind,'嗣父')
+			FROM member_adoptions a LEFT JOIN members f ON f.id = a.father_id ORDER BY a.member_id, a.sort_order, a.id`); aerr == nil {
+			for ars.Next() {
+				var mid int64
+				var a Adoption
+				if ars.Scan(&mid, &a.FatherID, &a.FatherName, &a.FatherText, &a.MotherID, &a.MotherName, &a.Kind) == nil {
+					adoptByMember[mid] = append(adoptByMember[mid], a)
+				}
+			}
+			ars.Close()
+		}
+		for i := range members {
+			if ads, ok := adoptByMember[members[i].ID]; ok {
+				members[i].Adoptions = ads
+			}
+			members[i].fillAdoptFather()
+		}
 	}
 
 	// 解密敏感字段（出库后解密，再脱敏）
@@ -139,12 +164,12 @@ func (h *MemberHandler) Get(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	var m Member
 	err := h.DB.QueryRow(`SELECT id, generation, branch, branch_id, surname, given_name, name, zi, hao, generation_word,
-		rank, gender, father_id, mother_id, mother_spouse_id, clan_type, record_type, foster_father_id,
+		rank, gender, father_id, mother_id, mother_spouse_id, clan_type, record_type, foster_father_id, birth_father_text,
 		birth_calendar, birth_gregorian, birth_lunar, birth_ganzhi, birth_era, death_gregorian, death_lunar, death_ganzhi, death_era,
 		lifespan, native_place, current_place, title, occupation, education, biography, burial_place, portrait, married_out, former_name, phone, dna_haploid, dna_diploid, dna_mito
 		FROM members WHERE id = ?`, id).Scan(&m.ID, &m.Generation, &m.Branch, &m.BranchID, &m.Surname, &m.GivenName, &m.Name, &m.Zi, &m.Hao,
 		&m.GenerationWord, &m.Rank, &m.Gender, &m.FatherID, &m.MotherID, &m.MotherSpouseID,
-		&m.ClanType, &m.RecordType, &m.FosterFatherID, &m.BirthCalendar, &m.BirthGregorian, &m.BirthLunar, &m.BirthGanzhi, &m.BirthEra,
+		&m.ClanType, &m.RecordType, &m.FosterFatherID, &m.BirthFatherText, &m.BirthCalendar, &m.BirthGregorian, &m.BirthLunar, &m.BirthGanzhi, &m.BirthEra,
 		&m.DeathGregorian, &m.DeathLunar, &m.DeathGanzhi, &m.DeathEra, &m.Lifespan,
 		&m.NativePlace, &m.CurrentPlace, &m.Title, &m.Occupation, &m.Education, &m.Biography, &m.BurialPlace, &m.Portrait, &m.MarriedOut, &m.FormerName, &m.Phone, &m.DNAHaploid, &m.DNADiploid, &m.DNAMito)
 	if err == sql.ErrNoRows {
@@ -158,6 +183,10 @@ func (h *MemberHandler) Get(c *gin.Context) {
 
 	// 解密敏感字段
 	m.DecryptSensitive(h.EncKey)
+
+	// 过继/收养关系（嗣父/养父，可多个）
+	m.Adoptions = loadAdoptions(h.DB, m.ID)
+	m.fillAdoptFather()
 
 	// 隐私脱敏（超管/理事长/理事全可见，房支理事按房支，族员按五服）
 	role := c.GetString("role")
@@ -205,6 +234,95 @@ func (h *MemberHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, created)
 }
 
+// Adoption 过继/收养关系（一人可多条：兼祧＝多个嗣父；养子＝养父）
+type Adoption struct {
+	ID         int64  `json:"id"`
+	FatherID   int64  `json:"father_id"`   // 嗣父/养父（本谱成员 id，0＝谱外）
+	FatherName string `json:"father_name"` // 只读：联表取的名字
+	FatherText string `json:"father_text"` // 谱外对象的姓名/出处
+	MotherID   int64  `json:"mother_id"`   // 嗣母/养母（本谱成员 id，0=未填）
+	MotherName string `json:"mother_name"` // 只读：联表取的名字
+	Kind       string `json:"kind"`        // 嗣父 / 养父
+	Note       string `json:"note"`
+}
+
+// fillAdoptFather 依据过继关系算出「承嗣父」：优先第一个本谱「嗣父」，其次「养父」
+func (m *Member) fillAdoptFather() {
+	m.AdoptFatherID = 0
+	m.AdoptKind = ""
+	for _, a := range m.Adoptions {
+		if a.FatherID > 0 && a.Kind == "嗣父" {
+			m.AdoptFatherID, m.AdoptKind = a.FatherID, "嗣父"
+			return
+		}
+	}
+	for _, a := range m.Adoptions {
+		if a.FatherID > 0 && a.Kind == "养父" {
+			m.AdoptFatherID, m.AdoptKind = a.FatherID, "养父"
+			return
+		}
+	}
+}
+
+// saveAdoptions 用提交上来的列表整体替换某成员的过继/收养关系，
+// 并把「第一个本谱嗣父」回写到 members.foster_father_id（老逻辑：图谱「出」标记、谱书都读它）。
+func saveAdoptions(db *sql.DB, memberID int64, list []Adoption) {
+	db.Exec(`DELETE FROM member_adoptions WHERE member_id = ?`, memberID)
+	firstFoster := int64(0)
+	order := 0
+	for _, a := range list {
+		kind := strings.TrimSpace(a.Kind)
+		if kind == "" {
+			kind = "嗣父"
+		}
+		ft := strings.TrimSpace(a.FatherText)
+		if a.FatherID == 0 && ft == "" {
+			continue // 空行
+		}
+		db.Exec(`INSERT INTO member_adoptions (member_id, father_id, father_text, kind, mother_id, note, sort_order)
+			VALUES (?,?,?,?,?,?,?)`, memberID, a.FatherID, ft, kind, a.MotherID, strings.TrimSpace(a.Note), order)
+		order++
+		if kind == "嗣父" && a.FatherID > 0 && firstFoster == 0 {
+			firstFoster = a.FatherID
+		}
+	}
+	db.Exec(`UPDATE members SET foster_father_id = ? WHERE id = ?`, firstFoster, memberID)
+}
+
+// loadAdoptions 读取某成员的全部过继/收养关系（含嗣父姓名）
+func loadAdoptions(db *sql.DB, memberID int64) []Adoption {
+	out := []Adoption{}
+	rows, err := db.Query(`SELECT a.id, a.father_id, COALESCE(m.name,''), a.father_text, COALESCE(a.mother_id,0), COALESCE(mo.name,''), a.kind, a.note
+		FROM member_adoptions a
+		LEFT JOIN members m ON m.id = a.father_id
+		LEFT JOIN members mo ON mo.id = a.mother_id
+		WHERE a.member_id = ? ORDER BY a.sort_order, a.id`, memberID)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a Adoption
+		if rows.Scan(&a.ID, &a.FatherID, &a.FatherName, &a.FatherText, &a.MotherID, &a.MotherName, &a.Kind, &a.Note) == nil {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// applyAdoptions 保存过继关系：请求里带了 adoptions（哪怕是空数组）才整体替换；
+// 没带（例如成员列表那种精简表单）就保持原样，避免把已有关系清空。
+// 新增时如果只给了旧的 foster_father_id，也补一条「嗣父」。
+func applyAdoptions(db *sql.DB, memberID int64, m *Member) {
+	if m.Adoptions == nil {
+		if m.FosterFatherID > 0 {
+			saveAdoptions(db, memberID, []Adoption{{FatherID: m.FosterFatherID, Kind: "嗣父"}})
+		}
+		return
+	}
+	saveAdoptions(db, memberID, m.Adoptions)
+}
+
 // applyCreate 实际执行新增成员（供直接写入与审核通过合并共用）
 func (h *MemberHandler) applyCreate(m *Member, changedBy int, changedByName string) (*Member, error) {
 	// 如果姓氏为空，从 settings 表读取 family_surname 并自动填充
@@ -233,12 +351,12 @@ func (h *MemberHandler) applyCreate(m *Member, changedBy int, changedByName stri
 	// 加密敏感字段（入库）
 	m.EncryptSensitive(h.EncKey)
 	res, err := h.DB.Exec(`INSERT INTO members (generation, branch, branch_id, surname, given_name, name, zi, hao, generation_word,
-		rank, gender, father_id, mother_id, mother_spouse_id, clan_type, record_type, foster_father_id,
+		rank, gender, father_id, mother_id, mother_spouse_id, clan_type, record_type, foster_father_id, birth_father_text,
 		birth_calendar, birth_gregorian, birth_lunar, birth_ganzhi, birth_era, death_gregorian, death_lunar, death_ganzhi, death_era,
 		lifespan, native_place, current_place, title, occupation, education, biography, burial_place, portrait, married_out, former_name, phone, dna_haploid, dna_diploid, dna_mito)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.Generation, m.Branch, m.BranchID, m.Surname, m.GivenName, m.Name, m.Zi, m.Hao, m.GenerationWord,
-		m.Rank, m.Gender, m.FatherID, m.MotherID, m.MotherSpouseID, m.ClanType, m.RecordType, m.FosterFatherID,
+		m.Rank, m.Gender, m.FatherID, m.MotherID, m.MotherSpouseID, m.ClanType, m.RecordType, m.FosterFatherID, m.BirthFatherText,
 		m.BirthCalendar, m.BirthGregorian, m.BirthLunar, m.BirthGanzhi, m.BirthEra, m.DeathGregorian, m.DeathLunar, m.DeathGanzhi, m.DeathEra,
 		m.Lifespan, m.NativePlace, m.CurrentPlace, m.Title, m.Occupation, m.Education, m.Biography, m.BurialPlace, m.Portrait, m.MarriedOut, m.FormerName, m.Phone, m.DNAHaploid, m.DNADiploid, m.DNAMito)
 	if err != nil {
@@ -256,6 +374,8 @@ func (h *MemberHandler) applyCreate(m *Member, changedBy int, changedByName stri
 			h.DB.Exec(`UPDATE members SET mother_spouse_id=? WHERE id=?`, motherSpouseID.Int64, m.SonID)
 		}
 	}
+	// 过继/收养关系（嗣父/养父，可多个）
+	applyAdoptions(h.DB, id, m)
 	// 记录版本：新增即 v1 快照
 	_ = recordVersion(h.DB, "member", id, m, changedBy, changedByName, "新增")
 	// 新增成员：只按姓名算出初始密码返回给前端展示（不建号；首次登录时才自动建号）
@@ -325,12 +445,12 @@ func (h *MemberHandler) applyUpdate(id int64, m *Member, changedBy int, changedB
 	// 加密敏感字段（入库）
 	m.EncryptSensitive(h.EncKey)
 	_, err := h.DB.Exec(`UPDATE members SET generation=?, branch=?, branch_id=?, surname=?, given_name=?, name=?, zi=?, hao=?, generation_word=?,
-		rank=?, gender=?, father_id=?, mother_id=?, mother_spouse_id=?, clan_type=?, record_type=?, foster_father_id=?,
+		rank=?, gender=?, father_id=?, mother_id=?, mother_spouse_id=?, clan_type=?, record_type=?, foster_father_id=?, birth_father_text=?,
 		birth_calendar=?, birth_gregorian=?, birth_lunar=?, birth_ganzhi=?, birth_era=?, death_gregorian=?, death_lunar=?, death_ganzhi=?, death_era=?,
 		lifespan=?, native_place=?, current_place=?, title=?, occupation=?, education=?, biography=?, burial_place=?, portrait=?, married_out=?, former_name=?, phone=?, dna_haploid=?, dna_diploid=?, dna_mito=?,
 		updated_at=CURRENT_TIMESTAMP WHERE id=?`,
 		m.Generation, m.Branch, m.BranchID, m.Surname, m.GivenName, m.Name, m.Zi, m.Hao, m.GenerationWord,
-		m.Rank, m.Gender, m.FatherID, m.MotherID, m.MotherSpouseID, m.ClanType, m.RecordType, m.FosterFatherID,
+		m.Rank, m.Gender, m.FatherID, m.MotherID, m.MotherSpouseID, m.ClanType, m.RecordType, m.FosterFatherID, m.BirthFatherText,
 		m.BirthCalendar, m.BirthGregorian, m.BirthLunar, m.BirthGanzhi, m.BirthEra, m.DeathGregorian, m.DeathLunar, m.DeathGanzhi, m.DeathEra,
 		m.Lifespan, m.NativePlace, m.CurrentPlace, m.Title, m.Occupation, m.Education, m.Biography, m.BurialPlace, m.Portrait, m.MarriedOut, m.FormerName, m.Phone, m.DNAHaploid, m.DNADiploid, m.DNAMito, id)
 	if err != nil {
@@ -347,6 +467,8 @@ func (h *MemberHandler) applyUpdate(id int64, m *Member, changedBy int, changedB
 			h.DB.Exec(`UPDATE members SET mother_spouse_id=? WHERE id=?`, motherSpouseID.Int64, m.SonID)
 		}
 	}
+	// 过继/收养关系（嗣父/养父，可多个）
+	applyAdoptions(h.DB, id, m)
 	// 房支变更：级联到后代（跟随旧房支或未分房的后代一起改）
 	if oldBranchID != m.BranchID {
 		cascadeBranchToDescendants(h.DB, id, oldBranchID, m.BranchID, m.Branch)

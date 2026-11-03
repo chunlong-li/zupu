@@ -34,7 +34,7 @@ func (h *UpdateHandler) currentVersion() string {
 	var v string
 	h.DB.QueryRow(`SELECT value FROM settings WHERE key = 'version'`).Scan(&v)
 	if v == "" {
-		return "1.3.10"
+		return "1.3.11"
 	}
 	return v
 }
@@ -417,11 +417,12 @@ func (h *UpdateHandler) deployUpdate(name, dlPath string, onStage func(stage str
 	oldBin := filepath.Join(h.Cfg.AppDir, binFileName())
 	oldWeb := h.Cfg.WebDir
 
-	// 部署：覆盖二进制 + web
-	if err := copyFile(binPath, oldBin); err != nil {
+	// 部署：替换二进制 + web
+	// 注意：不能直接 open 覆盖目标二进制——原地 exec 之后，进程跑的就是 AppDir 里这一份，
+	// 直接写会 ETXTBSY（"text file busy"）。见 replaceBinary 的说明。
+	if err := replaceBinary(binPath, oldBin); err != nil {
 		return false, "", fmt.Errorf("替换二进制失败: %v", err)
 	}
-	os.Chmod(oldBin, 0o755)
 	os.RemoveAll(oldWeb)
 	if err := copyDir(webSrc, oldWeb); err != nil {
 		return false, "", fmt.Errorf("替换前端失败: %v", err)
@@ -508,12 +509,11 @@ func (h *UpdateHandler) Rollback(c *gin.Context) {
 		return
 	}
 
-	// 恢复二进制和 web
-	if err := copyFile(oldBin, filepath.Join(h.Cfg.AppDir, binFileName())); err != nil {
+	// 恢复二进制和 web（同样用临时文件+rename，避免覆盖正在运行的二进制报 text file busy）
+	if err := replaceBinary(oldBin, filepath.Join(h.Cfg.AppDir, binFileName())); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "恢复二进制失败: " + err.Error()})
 		return
 	}
-	os.Chmod(filepath.Join(h.Cfg.AppDir, binFileName()), 0o755)
 	if _, err := os.Stat(oldWeb); err == nil {
 		os.RemoveAll(h.Cfg.WebDir)
 		if err := copyDir(oldWeb, h.Cfg.WebDir); err != nil {
@@ -564,7 +564,20 @@ func (h *UpdateHandler) restartSelf() {
 		os.Exit(0)
 		return
 	}
-	// Linux/Docker：familytree 是容器 PID 1，退出后 Docker 自动重启容器
+	// Linux / Docker / fnOS：优先**原地 exec 新二进制**（PID 不变、进程不退出）。
+	// 不能只 os.Exit(0) 靠外部拉起：Docker 的 restart=unless-stopped 在不少部署里并不是
+	// 我们以为的那样（群晖/飞牛项目里常是 no、进程也可能不是 PID 1、fnOS 是 nohup 拉起的），
+	// 一退出就再没人来拉 → 前端永远停在"正在重启..."。exec 失败才退回退出交给外部。
+	newBin := filepath.Join(h.Cfg.AppDir, binFileName())
+	if fi, err := os.Stat(newBin); err == nil && !fi.IsDir() {
+		_ = os.Chmod(newBin, 0o755)
+		log.Printf("[更新] 原地切换到新二进制: %s", newBin)
+		if execErr := proc.ExecSelf(newBin, []string{newBin}); execErr != nil {
+			log.Printf("[更新] exec 新二进制失败: %v（改为退出进程，交给容器/服务管理器拉起）", execErr)
+		}
+	} else {
+		log.Printf("[更新] 新二进制不可用: %v（改为退出进程，交给容器/服务管理器拉起）", err)
+	}
 	os.Exit(0)
 }
 
@@ -672,6 +685,30 @@ func copyFile(src, dst string) error {
 	defer out.Close()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// replaceBinary 用「先写临时文件、再 rename 覆盖」的方式替换可执行文件。
+//
+// 为什么不能直接 copyFile 覆盖：Linux 不允许对一个**正在执行**的文件 open(O_WRONLY)，
+// 会返回 ETXTBSY（"text file busy"）。而自重启改成原地 exec 之后，进程跑的就是
+// <AppDir>/familytree 这一份，第二次更新必然踩到 —— 表现为
+// 「替换二进制失败: open /data/runtime/familytree: text file busy」。
+// rename 只改目录项，运行中的旧 inode 不受影响，进程下次 exec 就拿新的。
+func replaceBinary(src, dst string) error {
+	tmp := dst + ".new"
+	if err := copyFile(src, tmp); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // copyDir 递归复制目录

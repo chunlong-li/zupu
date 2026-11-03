@@ -51,7 +51,7 @@
             <stop offset="55%" stop-color="#fdf1d2" />
             <stop offset="100%" stop-color="#eddfb6" />
           </linearGradient>
-          <clipPath v-for="n in nodes" :key="'clip'+n.id" :id="'clip'+n.id">
+          <clipPath v-for="n in nodes" :key="'clip'+(n._uid||n.id)" :id="'clip'+(n._uid||n.id)">
             <rect :x="n.x - 30" :y="n.y" :width="60" :height="60" rx="8" />
           </clipPath>
           <clipPath v-for="sn in allSpouseNodes" :key="'spclip'+sn.id" :id="'spclip'+sn.id">
@@ -64,10 +64,10 @@
             <path :d="edge.d" :stroke="edge.sep ? '#8c5a3c' : '#8c5a3c'" :stroke-width="edge.sep ? 1 : 1.5" :stroke-dasharray="edge.dashed ? '8,4' : 'none'" fill="none" :opacity="edge.sep ? 0.5 : 1" />
           </g>
           <!-- 节点 -->
-          <g v-for="n in nodes" :key="n.id" class="node-group">
+          <g v-for="n in nodes" :key="n._uid || n.id" class="node-group">
             <!-- 成员头像 -->
             <g class="node" @click="showMember(n)">
-              <image v-if="n.portrait && portraitLoad !== 'off'" :href="portraitSrc(n.portrait)" :x="n.x - 30" :y="n.y" :width="60" :height="60" :clip-path="`url(#clip${n.id})`" />
+              <image v-if="n.portrait && portraitLoad !== 'off'" :href="portraitSrc(n.portrait)" :x="n.x - 30" :y="n.y" :width="60" :height="60" :clip-path="`url(#clip${n._uid||n.id})`" />
               <rect v-else :x="n.x - 30" :y="n.y" :width="60" :height="60" rx="8"
                 :fill="n.dead ? '#d9cbb6' : '#e8d5b8'"
                 :stroke="n.highlight ? '#d9534f' : '#8c5a3c'" stroke-width="1.5" />
@@ -130,13 +130,8 @@
           </g>
           <!-- 无嗣 / 迁居失联 标注 -->
           <g v-for="mk in markers" :key="mk.id">
-            <path :d="`M${mk.x} ${mk.from} L${mk.x} ${mk.y}`" stroke="#8c5a3c" stroke-width="1.5" fill="none" />
-            <rect :x="mk.x - mk.boxW / 2" :y="mk.y" :width="mk.boxW" :height="mk.boxH" rx="6"
-              fill="#d9d9d9" stroke="#8c5a3c" stroke-width="1.2" />
-            <text v-for="(ln, li) in mk.lines" :key="li" :x="mk.x"
-              :y="mk.y + mk.boxH / 2 + mk.fs * 0.36 - ((mk.lines.length - 1) * mk.lineH) / 2 + li * mk.lineH"
-              text-anchor="middle" :font-size="mk.fs" :class="mk.type === 'noheir' ? 'node-name' : ''"
-              fill="#8c5a3c">{{ ln }}</text>
+            <text v-for="(ln, li) in mk.lines" :key="li" :x="mk.x" :y="mk.y + li * mk.lineH"
+              text-anchor="middle" :font-size="mk.fs" class="node-mark" fill="#8c5a3c">{{ ln }}</text>
           </g>
         </g>
       </svg>
@@ -324,7 +319,7 @@ const spouseDialogVisible = ref(false)
 const current = reactive({})
 const currentSpouse = ref({})
 const editForm = reactive({})
-const clanTypes = ['本生', '嗣子', '兼祧', '入赘', '养子']
+const clanTypes = ['本生', '嗣子', '兼祧', '入赘', '养子', '出继外姓']
 
 const fatherCandidates = computed(() => {
   if (editForm.record_type === '外纪') {
@@ -464,15 +459,36 @@ const nodes = computed(() => {
   const byId = new Map()
   list.forEach(m => byId.set(m.id, { ...m, children: [] }))
   const roots = []
+  // 出继/入继双向挂载：
+  //   承嗣父（嗣父/养父）下挂本人，子嗣在这里继续往下；
+  //   生父下只挂一个「出继」标记副本，不带子嗣。
   byId.forEach(node => {
-    if (node.father_id && byId.has(node.father_id)) {
-      byId.get(node.father_id).children.push(node)
+    const bioId = node.father_id || 0
+    const adoptId = node.adopt_father_id || 0
+    const useAdopt = adoptId > 0 && adoptId !== bioId && byId.has(adoptId)
+    if (useAdopt) {
+      byId.get(adoptId).children.push(node)
+      // 同一件事两面看：同族之间叫「入继」（承嗣父侧）/「出继」（生父侧）；
+      // 生父在谱外（外姓、外族）进来的，是「收养」，不叫入继
+      node._inMark = bioId > 0 ? '入继' : '收养'
+      node._outMark = node._outMark || ''
+      if (bioId > 0 && byId.has(bioId)) {
+        // 生父下挂一个同名副本（只作标记、不带子嗣），标「出继」
+        byId.get(bioId).children.push({ ...node, children: [], _outMark: '出继', _inMark: '', _uid: node.id + '-out' })
+      }
+    } else if (bioId && byId.has(bioId)) {
+      byId.get(bioId).children.push(node)
     } else {
       roots.push(node)
     }
   })
   byId.forEach(node => sortSiblings(node.children))
   roots.sort((a, b) => a.generation - b.generation || a.id - b.id)
+
+  // 全部节点（含生父下的「出继」副本 —— 它不在 byId 里，必须一起参与布局和绘制）
+  const allNodes = []
+  const collect = (n) => { allNodes.push(n); (n.children || []).forEach(collect) }
+  roots.forEach(collect)
 
   // 2. tidy 布局：父 = 首末子中心的中点
   let leafCounter = 0
@@ -511,7 +527,7 @@ const nodes = computed(() => {
   const minGen = Math.min(...list.map(m => m.generation))
   const maxGen = Math.max(...list.map(m => m.generation))
   const MIN_GAP = 30
-  const genList = (g) => [...byId.values()].filter(n => n.generation === g).sort((a, b) => a.center - b.center)
+  const genList = (g) => allNodes.filter(n => n.generation === g).sort((a, b) => a.center - b.center)
   const resolveOverlap = () => {
     let moved = false
     for (let g = minGen; g <= maxGen; g++) {
@@ -557,7 +573,7 @@ const nodes = computed(() => {
 
   // 4. 计算坐标（n.x = 成员头像中心；spouseNodes[].x = 配偶头像左上角）
   const result = []
-  byId.forEach(m => {
+  allNodes.forEach(m => {
     const displayName = m.name || (m.surname || '') + (m.given_name || '')
     const spList = spouseList(m)
     const unitW = unitWOf(m)
@@ -596,6 +612,13 @@ const nodes = computed(() => {
     const subChars = toChars(genLabel)
     // 竖排文字块：首字 baseline 补偿 12px，使姓氏文字顶部与头像顶部对齐
     const startY = y + 12
+
+    // 坐标也写回原始节点：children 里存的就是这些原始对象，
+    // 连线要用它们自己的 x/y（出继副本与本人同 id，不能按 id 反查）
+    m.x = cx
+    m.y = y
+    m.textStartY = startY
+    m.unitW = unitW
 
     result.push({
       ...m, x: cx, y, unitW,
@@ -670,22 +693,48 @@ const nodes = computed(() => {
 // 无嗣 / 迁居失联 标注（画在成员头像正下方）
 const markers = computed(() => {
   const res = []
+  // 标注在「姓名竖排」左侧，一字一行；按「短语」分列（如「生殁葬失考」「子嗣失考」各占一列），
+  // 单个短语超过 6 字再自行折列，避免一长条拖到屏幕外。
+  const MK_FS = 11
+  const MK_LH = 12
+  const COL_W = 14
+  const PER_COL = 6
+  const toCol = (txt) => Array.from(String(txt || ''))
+  const pushPhrases = (n, type, phrases) => {
+    let col = 0
+    phrases.forEach(ph => {
+      const chars = toCol(ph)
+      for (let i = 0; i < chars.length; i += PER_COL) {
+        res.push({
+          type,
+          id: type + '_' + (n._uid || n.id) + '_' + col,
+          x: n.x - 58 - col * COL_W,
+          y: n.textStartY || (n.y + 12),
+          lines: chars.slice(i, i + PER_COL),
+          fs: MK_FS,
+          lineH: MK_LH
+        })
+        col++
+      }
+    })
+  }
   nodes.value.forEach(n => {
     const noKids = !n.children || !n.children.length
-    const y = n.y + NODE_H + 8
-    const from = n.y + AVATAR
+    // 优先级：失考 > 出继/入继 > 无嗣（有失考就不再叠加其它标记）
     if (n.lost_contact) {
-      const lines = lostContactText(memberKnown(n), !noKids, false).split('，')
-      const maxLen = Math.max(...lines.map(l => l.length))
-      res.push({ type: 'lost', id: 'lost_' + n.id, x: n.x, y, from, lines,
-        fs: 12, lineH: 16, boxW: Math.max(60, maxLen * 13 + 16), boxH: lines.length * 16 + 10 })
+      pushPhrases(n, 'lost', lostContactText(memberKnown(n), !noKids, false).split('，'))
+    } else if (n._outMark) {
+      pushPhrases(n, 'out', [n._outMark])
+    } else if (n._inMark) {
+      pushPhrases(n, 'in', [n._inMark])
     } else if (n.no_heir && noKids) {
-      res.push({ type: 'noheir', id: 'noheir_' + n.id, x: n.x, y, from, lines: [NO_HEIR],
-        fs: 17, lineH: 18, boxW: 60, boxH: 30 })
+      pushPhrases(n, 'noheir', [NO_HEIR])
     }
   })
   return res
 })
+
+
 
 // 所有配偶节点扁平列表（用于 defs clipPath）
 const allSpouseNodes = computed(() => {
@@ -697,7 +746,24 @@ const allSpouseNodes = computed(() => {
 // 连线：正交垂线（父底→竖线→横线串兄弟→各子竖线），避免交叉
 const edges = computed(() => {
   const map = {}
-  nodes.value.forEach(n => { map[n.id] = n })
+  const listById = {}
+  nodes.value.forEach(n => {
+    map[n.id] = n
+    ;(listById[n.id] = listById[n.id] || []).push(n)
+  })
+  // 同一个 id 可能有两个节点（出继副本 + 本人）→ 取离父节点最近的那个连线
+  const nearest = (parent, id) => {
+    const cands = listById[id]
+    if (!cands || !cands.length) return map[id] || null
+    if (cands.length === 1) return cands[0]
+    let best = cands[0]
+    let bd = Infinity
+    for (const c of cands) {
+      const d = Math.abs(c.x - parent.x) + Math.abs(c.y - parent.y)
+      if (d < bd) { bd = d; best = c }
+    }
+    return best
+  }
   const result = []
   nodes.value.forEach(n => {
     if (!n.children || !n.children.length) return
@@ -705,11 +771,11 @@ const edges = computed(() => {
     const fx = n.x
     const fyBottom = n.y + AVATAR
     const childTops = n.children.map(k => {
-      const kn = map[k.id]
-      return kn ? kn.x : fx
+      const kn = nearest(n, k.id)
+      return kn && typeof kn.x === 'number' ? kn.x : fx
     })
     if (n.children.length === 1) {
-      const kn = map[n.children[0].id]
+      const kn = nearest(n, n.children[0].id)
       const childY = kn ? kn.y - 4 : n.y + NODE_H + GEN_GAP - 4
       result.push({ d: `M${fx} ${fyBottom} L${fx} ${childY}` })
     } else {
@@ -719,10 +785,9 @@ const edges = computed(() => {
       result.push({ d: `M${fx} ${fyBottom} L${fx} ${midY}` })
       result.push({ d: `M${minX} ${midY} L${maxX} ${midY}` })
       n.children.forEach(k => {
-        const kn = map[k.id]
+        const kn = nearest(n, k.id)
         if (kn) {
-          const cx = kn.x
-          result.push({ d: `M${cx} ${midY} L${cx} ${kn.y - 4}` })
+          result.push({ d: `M${kn.x} ${midY} L${kn.x} ${kn.y - 4}` })
         }
       })
     }
@@ -841,10 +906,12 @@ function calcAge(o) {
 function goSpouseDetail(sn) { spouseDialogVisible.value = false; router.push(`/spouse/${sn.spouseId}`) }
 function editMember(m) {
   const copy = JSON.parse(JSON.stringify(m))
+  // 先清空：birth_date 是纯 UI 字段（接口不返回），不清会串到下一个成员
+  Object.keys(editForm).forEach(k => delete editForm[k])
   Object.assign(editForm, copy)
   if (!editForm.surname) editForm.surname = familySurname.value
   editForm.birth_calendar = editForm.birth_calendar || 'solar'
-  editForm.birth_date = editForm.birth_date || editForm.birth_gregorian || ''
+  editForm.birth_date = editForm.birth_gregorian || ''
   dialogVisible.value = false
   editVisible.value = true
 }
@@ -1223,6 +1290,7 @@ svg.tf-on text, svg.tf-on tspan { font-family: var(--tree-font); }
 .canvas-wrap { flex: 1; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: #fff; cursor: grab; touch-action: none; user-select: none; }
 .tree-svg { display: block; }
 .node { cursor: pointer; }
+.node-mark { font-size: 11px; font-family: "Songti SC", "SimSun", serif; }
 .node-name { font-size: 13px; font-weight: bold; font-family: "Songti SC", "SimSun", serif; }
 .node-sub { font-size: 10px; }
 .member-card .row { display: flex; margin-bottom: 8px; }

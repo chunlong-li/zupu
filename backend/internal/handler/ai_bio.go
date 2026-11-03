@@ -531,30 +531,30 @@ func (h *AIHandler) GenerateBiography(c *gin.Context) {
 	}
 
 	var body struct {
-		MemberID      int64  `json:"member_id"`
-		SpouseID      int64  `json:"spouse_id"`
-		Name          string `json:"name"`
-		Zi            string `json:"zi"`
-		Hao           string `json:"hao"`
-		Gender        string `json:"gender"`
-		BirthEra      string `json:"birth_era"`
-		BirthLunar    string `json:"birth_lunar"`
-		BirthGreg     string `json:"birth_gregorian"`
-		DeathEra      string `json:"death_era"`
-		DeathLunar    string `json:"death_lunar"`
-		DeathGreg     string `json:"death_gregorian"`
-		NativePlace   string `json:"native_place"`
-		CurrentPlace  string `json:"current_place"`
-		Title         string `json:"title"`
-		Occupation    string `json:"occupation"`
-		Honors        string `json:"honors"`
-		Summary       string `json:"summary"`
-		Reason        string `json:"reason"`
-		Style         string `json:"style"`
-		Length        string `json:"length"`
-		Level         *int   `json:"level"`
-		Degree        *int   `json:"degree"`
-		ExtraNotes    string `json:"extra_notes"`
+		MemberID     int64  `json:"member_id"`
+		SpouseID     int64  `json:"spouse_id"`
+		Name         string `json:"name"`
+		Zi           string `json:"zi"`
+		Hao          string `json:"hao"`
+		Gender       string `json:"gender"`
+		BirthEra     string `json:"birth_era"`
+		BirthLunar   string `json:"birth_lunar"`
+		BirthGreg    string `json:"birth_gregorian"`
+		DeathEra     string `json:"death_era"`
+		DeathLunar   string `json:"death_lunar"`
+		DeathGreg    string `json:"death_gregorian"`
+		NativePlace  string `json:"native_place"`
+		CurrentPlace string `json:"current_place"`
+		Title        string `json:"title"`
+		Occupation   string `json:"occupation"`
+		Honors       string `json:"honors"`
+		Summary      string `json:"summary"`
+		Reason       string `json:"reason"`
+		Style        string `json:"style"`
+		Length       string `json:"length"`
+		Level        *int   `json:"level"`
+		Degree       *int   `json:"degree"`
+		ExtraNotes   string `json:"extra_notes"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})

@@ -6,6 +6,7 @@
 package proc
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -67,6 +68,11 @@ func StartInNewConsole(exe string, args []string, dir string) error {
 	cmd.Dir = dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNewConsole}
 	return cmd.Start()
+}
+
+// ExecSelf Windows 不支持原地 exec（更新走 --self-replace 替换器）
+func ExecSelf(exe string, args []string) error {
+	return errors.New("proc: Windows 不支持原地 exec")
 }
 
 // InitConsole 把当前控制台输出代码页设为 UTF-8 并设置窗口标题（无控制台时静默跳过）。

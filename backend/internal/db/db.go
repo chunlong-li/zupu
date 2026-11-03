@@ -516,7 +516,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_max_tokens', '2048');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_timeout_sec', '180');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_path', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('biography_criteria', '');
-INSERT OR REPLACE INTO settings (key, value) VALUES ('version', '1.3.10');
+INSERT OR REPLACE INTO settings (key, value) VALUES ('version', '1.3.11');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('deployed_at', CAST(strftime('%s','now') AS TEXT));
 INSERT OR IGNORE INTO settings (key, value) VALUES ('account_enabled', '0');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('account_submitters', '[]');
@@ -576,6 +576,9 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('account_fund_base', '0');
 		// 多媒体素材归属：0＝总谱；>0＝某房支 id（旧记录无此列 → 迁移后默认 0＝总谱，仍可见）
 		`ALTER TABLE media_assets ADD COLUMN branch_id INT DEFAULT 0`,
 		`ALTER TABLE members ADD COLUMN lost_contact TINYINT DEFAULT 0`,
+		`ALTER TABLE member_adoptions ADD COLUMN mother_id INT DEFAULT 0`,
+		// 出继/入继：生父在谱外时记文本（如「城东王氏 王某某」）
+		`ALTER TABLE members ADD COLUMN birth_father_text VARCHAR(128) DEFAULT ''`,
 		`ALTER TABLE merit_steles ADD COLUMN border VARCHAR(16) DEFAULT 'none'`,
 		// 祠宇志 / 茔墓志：在既有 cemeteries（「祠堂与祖茔」共用表）上扩展，
 		// 不建平行主表；旧行 kind 留空（未分类，不猜），CultureView「祠墓」tab 仍照旧列出。
@@ -604,6 +607,25 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('account_fund_base', '0');
 	for _, stmt := range alterStatements {
 		database.Exec(stmt) // 忽略错误（列已存在等情况）
 	}
+
+	// 过继/收养关系（嗣父、养父，可多个）：一人可有多条（兼祧＝多个嗣父）
+	database.Exec(`CREATE TABLE IF NOT EXISTS member_adoptions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		member_id INTEGER NOT NULL,
+		father_id INTEGER DEFAULT 0,
+		father_text VARCHAR(128) DEFAULT '',
+		kind VARCHAR(16) DEFAULT '嗣父',
+		mother_id INTEGER DEFAULT 0,
+		note VARCHAR(255) DEFAULT '',
+		sort_order INTEGER DEFAULT 0
+	)`)
+	database.Exec(`CREATE INDEX IF NOT EXISTS idx_member_adoptions_member ON member_adoptions (member_id, sort_order)`)
+	database.Exec(`CREATE INDEX IF NOT EXISTS idx_member_adoptions_father ON member_adoptions (father_id)`)
+	// 旧数据迁移（幂等）：把老的单个 foster_father_id 灌进新表，之后一律以新表为准
+	database.Exec(`INSERT INTO member_adoptions (member_id, father_id, kind, sort_order)
+		SELECT id, foster_father_id, '嗣父', 0 FROM members
+		WHERE COALESCE(foster_father_id,0) > 0
+		  AND NOT EXISTS (SELECT 1 FROM member_adoptions a WHERE a.member_id = members.id)`)
 
 	// 祠宇志/茔墓志图片迁移（幂等）：旧「祠墓」只有单张 photo，把它回填成 photos JSON 数组，
 	// 老数据在祠宇志/茔墓志里也能看到那张图；photo 列本身保留不动（CultureView 仍按单图渲染）。

@@ -17,7 +17,7 @@ type MemberWithSpouseList struct {
 func (h *MemberHandler) ListWithSpouses(c *gin.Context) {
 	bcond, bargs := BranchScope(c, h.DB, "branch_id")
 	mq := `SELECT id, generation, branch, branch_id, surname, given_name, name, zi, hao, generation_word,
-		rank, gender, father_id, mother_id, mother_spouse_id, clan_type, record_type, foster_father_id,
+		rank, gender, father_id, mother_id, mother_spouse_id, clan_type, record_type, foster_father_id, birth_father_text,
 		birth_calendar, birth_gregorian, birth_lunar, birth_ganzhi, birth_era, death_gregorian, death_lunar, death_ganzhi, death_era,
 		lifespan, native_place, current_place, title, occupation, education, biography, burial_place, portrait, married_out, former_name, phone, dna_haploid, dna_diploid, dna_mito
 		FROM members`
@@ -37,7 +37,7 @@ func (h *MemberHandler) ListWithSpouses(c *gin.Context) {
 		var m Member
 		if err := rows.Scan(&m.ID, &m.Generation, &m.Branch, &m.BranchID, &m.Surname, &m.GivenName, &m.Name, &m.Zi, &m.Hao,
 			&m.GenerationWord, &m.Rank, &m.Gender, &m.FatherID, &m.MotherID, &m.MotherSpouseID,
-			&m.ClanType, &m.RecordType, &m.FosterFatherID, &m.BirthCalendar, &m.BirthGregorian, &m.BirthLunar, &m.BirthGanzhi, &m.BirthEra,
+			&m.ClanType, &m.RecordType, &m.FosterFatherID, &m.BirthFatherText, &m.BirthCalendar, &m.BirthGregorian, &m.BirthLunar, &m.BirthGanzhi, &m.BirthEra,
 			&m.DeathGregorian, &m.DeathLunar, &m.DeathGanzhi, &m.DeathEra, &m.Lifespan,
 			&m.NativePlace, &m.CurrentPlace, &m.Title, &m.Occupation, &m.Education, &m.Biography, &m.BurialPlace, &m.Portrait, &m.MarriedOut, &m.FormerName, &m.Phone, &m.DNAHaploid, &m.DNADiploid, &m.DNAMito); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -64,6 +64,21 @@ func (h *MemberHandler) ListWithSpouses(c *gin.Context) {
 		members = append(members, MemberWithSpouseList{Member: m, Spouses: spouses})
 	}
 
+	// 过继/收养关系（树图要按「承嗣父」双向挂载，并标出继/入继）
+	adoptByMember := map[int64][]Adoption{}
+	if ars, aerr := h.DB.Query(`SELECT a.member_id, a.father_id, COALESCE(f.name,''), COALESCE(a.father_text,''), COALESCE(a.mother_id,0), COALESCE(mo.name,''), COALESCE(a.kind,'嗣父')
+		FROM member_adoptions a LEFT JOIN members f ON f.id = a.father_id LEFT JOIN members mo ON mo.id = a.mother_id
+		ORDER BY a.member_id, a.sort_order, a.id`); aerr == nil {
+		for ars.Next() {
+			var mid int64
+			var a Adoption
+			if ars.Scan(&mid, &a.FatherID, &a.FatherName, &a.FatherText, &a.MotherID, &a.MotherName, &a.Kind) == nil {
+				adoptByMember[mid] = append(adoptByMember[mid], a)
+			}
+		}
+		ars.Close()
+	}
+
 	// 解密敏感字段 + 隐私脱敏
 	viewerID := FindMemberByName(h.DB, c.GetString("username"))
 	flags := memberFlagsMap(h.DB)
@@ -75,6 +90,10 @@ func (h *MemberHandler) ListWithSpouses(c *gin.Context) {
 			members[i].Member.LostContact = v[1]
 		}
 		members[i].Member.HasBio = bioSet[members[i].ID]
+		if ads, ok := adoptByMember[members[i].ID]; ok {
+			members[i].Member.Adoptions = ads
+		}
+		members[i].Member.fillAdoptFather()
 		for j := range members[i].Spouses {
 			members[i].Spouses[j].HasBio = bioSpouseSet[members[i].Spouses[j].ID]
 		}

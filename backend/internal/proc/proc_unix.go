@@ -2,9 +2,22 @@
 
 package proc
 
-import "errors"
+import (
+	"errors"
+	"os"
+	"syscall"
+)
 
 var errUnsupported = errors.New("proc: 仅 Windows 支持该操作")
+
+// ExecSelf 用新二进制**原地替换**当前进程（execve）：PID 不变、进程不退出。
+// 在线更新后靠它自己回到新版本，不依赖 Docker restart 策略 / systemd / nohup 父进程。
+func ExecSelf(exe string, args []string) error {
+	if len(args) == 0 {
+		args = []string{exe}
+	}
+	return syscall.Exec(exe, args, os.Environ())
+}
 
 // StartDetached 非 Windows 平台不支持（Linux/Docker 由 restart=unless-stopped 拉起）
 func StartDetached(exe string, args []string, dir, logPath string) error { return errUnsupported }

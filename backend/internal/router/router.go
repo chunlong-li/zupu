@@ -99,6 +99,11 @@ func Setup(cfg *config.Config, db *sql.DB, scheduler *backup.Scheduler) *gin.Eng
 
 	api := r.Group("/api")
 	{
+		// 健康检查别名：前端 axios 的 baseURL 是 /api，更新页轮询写的是 api.get('/health')，
+		// 实际请求落到 /api/health。以前这里没有该路由 → 恒 404 → 更新完界面永远停在"正在重启..."。
+		// 保留别名可兼容已发布出去的旧前端（1.1.0 ~ 1.3.10）。
+		api.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
+
 		// 认证（无需登录）
 		auth := &handler.AuthHandler{DB: db}
 		api.POST("/auth/login", auth.Login)

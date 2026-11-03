@@ -118,14 +118,13 @@
               </template>
             </g>
           </g>
-          <!-- 失考 / 无嗣 标注：成员框下方连线 + 灰框（与宝塔式一致） -->
-          <g v-for="n in annotNodes" :key="'mk' + n.id">
-            <path :d="`M${n.x + NODE_W / 2} ${n.y + NODE_H} L${n.x + NODE_W / 2} ${n.y + NODE_H + 8}`" stroke="#8c5a3c" stroke-width="1.5" fill="none" />
-            <rect :x="n.x + NODE_W / 2 - n.mkBoxW / 2" :y="n.y + NODE_H + 8" :width="n.mkBoxW" :height="n.mkBoxH" rx="6"
-              fill="#d9d9d9" stroke="#8c5a3c" stroke-width="1.2" />
-            <text v-for="(ln, li) in n.mkLines" :key="li" :x="n.x + NODE_W / 2"
-              :y="n.y + NODE_H + 8 + n.mkBoxH / 2 + n.mkFs * 0.36 - ((n.mkLines.length - 1) * n.mkLineH) / 2 + li * n.mkLineH"
-              text-anchor="middle" :font-size="n.mkFs" fill="#8c5a3c">{{ ln }}</text>
+          <!-- 出继 / 入继 / 收养 / 失考 / 无嗣：竖排在框的左侧，按短语分列 -->
+          <g v-for="n in annotNodes" :key="'mk' + (n._uid || n.id)">
+            <text v-for="(col, ci) in n.mkCols" :key="ci">
+              <tspan v-for="(ch, li) in col" :key="li"
+                :x="n.x - 10 - ci * 13" :y="n.y + 12 + li * 12"
+                text-anchor="middle" font-size="11" fill="#8c5a3c">{{ ch }}</tspan>
+            </text>
           </g>
         </g>
       </svg>
@@ -257,9 +256,21 @@ const tree = computed(() => {
 
   // 2. 挂父子关系；找不到父的作为根（含断代/始祖）
   const roots = []
+  // 出继/入继/收养：承嗣父下挂本人（带子嗣），生父下挂一个「出继」副本（不带子嗣）
   byId.forEach(node => {
-    if (node.father_id && byId.has(node.father_id)) {
-      byId.get(node.father_id).children.push(node)
+    if (node.clan_type === '出继外姓') node._outMark = '出继外姓'
+    const bioId = node.father_id || 0
+    const adoptId = node.adopt_father_id || 0
+    const useAdopt = adoptId > 0 && adoptId !== bioId && byId.has(adoptId)
+    if (useAdopt) {
+      byId.get(adoptId).children.push(node)
+      node._inMark = bioId > 0 ? '入继' : '收养'
+      node._outMark = node._outMark || ''
+      if (bioId > 0 && byId.has(bioId)) {
+        byId.get(bioId).children.push({ ...node, children: [], _outMark: '出继', _inMark: '', _uid: node.id + '-out' })
+      }
+    } else if (bioId && byId.has(bioId)) {
+      byId.get(bioId).children.push(node)
     } else {
       roots.push(node)
     }
@@ -284,6 +295,11 @@ const tree = computed(() => {
 
   // 多根时按世代再按 id 排序
   roots.sort((a, b) => a.generation - b.generation || a.id - b.id)
+
+  // 全部节点（含生父下的「出继」副本），参与布局与绘制
+  const allNodes = []
+  const collectAll = (n) => { allNodes.push(n); (n.children || []).forEach(collectAll) }
+  roots.forEach(collectAll)
 
   // 4. tidy 布局：父节点 = 首末子节点中心的中点（而非叶子区间中心）
   //    每个节点记录 center（横向中心，单位=叶子槽位）、min/max（子树槽位范围）
@@ -330,7 +346,7 @@ const tree = computed(() => {
   const maxGenForGap = Math.max(...list.map(m => m.generation))
   const unitWOf = n => NODE_W * (1 + spouseList(n).length)
   const MIN_GAP = 14
-  const genListS = (g) => [...byId.values()].filter(n => n.generation === g).sort((a, b) => a.center - b.center)
+  const genListS = (g) => allNodes.filter(n => n.generation === g).sort((a, b) => a.center - b.center)
   const resolveOverlapS = () => {
     let moved = false
     for (let g = minGenForGap; g <= maxGenForGap; g++) {
@@ -377,7 +393,7 @@ const tree = computed(() => {
   // 7. 计算 x/y
   const minGen = Math.min(...list.map(m => m.generation))
   const layoutNodes = []
-  byId.forEach(node => {
+  allNodes.forEach(node => {
     const center = node.center
     const x = center * LEAF_SPACING + SIDE_MARGIN
     const y = TOP_MARGIN + (node.generation - minGen) * V_GAP
@@ -408,16 +424,18 @@ const tree = computed(() => {
     const noKids = !(n.children && n.children.length)
     let txt = ''
     if (n.lost_contact) txt = lostContactText(memberKnown(n), !noKids, false)
+    else if (n._outMark) txt = n._outMark
+    else if (n._inMark) txt = n._inMark
     else if (n.no_heir && noKids) txt = NO_HEIR_TRAD
     if (!txt) return
-    const lines = txt.split('，')
-    const maxLen = Math.max(...lines.map(l => l.length))
     n.subAnnot = true
-    n.mkLines = lines
-    n.mkFs = n.lost_contact ? 12 : 17
-    n.mkLineH = 16
-    n.mkBoxW = n.lost_contact ? Math.max(60, maxLen * 13 + 16) : 60
-    n.mkBoxH = n.lost_contact ? lines.length * 16 + 10 : 30
+    // 每个短语一列，列内竖排；短语超过 6 字再折列
+    const cols = []
+    String(txt).split('，').forEach(ph => {
+      const chars = Array.from(ph)
+      for (let i = 0; i < chars.length; i += 6) cols.push(chars.slice(i, i + 6))
+    })
+    n.mkCols = cols
   })
   // 7.5 整体居中：先确定画布宽，再让树在画布中水平居中
   if (layoutNodes.length) {
@@ -464,16 +482,29 @@ const tree = computed(() => {
 
   // 6. 垂珠连线：父底 → 竖线 → 横线（串兄弟）→ 各子竖线
   const connections = []
+  const byIdList = {}
+  layoutNodes.forEach(n => { (byIdList[n.id] = byIdList[n.id] || []).push(n) })
+  const pick = (parent, id) => {
+    const cands = byIdList[id]
+    if (!cands || !cands.length) return null
+    if (cands.length === 1) return cands[0]
+    let best = cands[0], bd = Infinity
+    for (const c of cands) {
+      const d = Math.abs((c.x + c.unitW / 2) - (parent.x + parent.unitW / 2)) + Math.abs(c.y - parent.y)
+      if (d < bd) { bd = d; best = c }
+    }
+    return best
+  }
   byId.forEach(node => {
     const kids = node.children
     if (!kids.length) return
-    const f = layoutNodes.find(n => n.id === node.id)
+    const f = pick(node, node.id)
     if (!f) return
 
     const fx = f.x + f.unitW / 2          // 父单元中心
     const fyBottom = f.y + NODE_H          // 父框底
 
-    const kidNodes = kids.map(k => layoutNodes.find(n => n.id === k.id)).filter(Boolean)
+    const kidNodes = kids.map(k => pick(f, k.id) || layoutNodes.find(n => n.id === k.id)).filter(Boolean)
     if (!kidNodes.length) return
 
     if (kids.length === 1) {
