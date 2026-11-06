@@ -24,11 +24,16 @@ docs/bridge-token.txt
 *.p12
 系统备份/
 docs/TO-*.md
-
-# 内部协作文档 / 本机凭据（不进开源仓库）
-AGENTS.md
-SECURITY-CLEANUP.md
-GITHUB-PREP.md
 .hermes_session_token
 .openclaw-to-hermes.md
-docs/权限与协作约定.md
+.hermes*
+*_session_token
+docs/TO-openclaw-*.md
+开源导出/
+.tmp-github-pat
+# 本机构建缓存 / 进程号 / 测试副本 / 未脱敏素材（不进仓库）
+.gocache/
+.gotmp/
+*.pid
+frontend/public/zupu-test/
+*.bak.png

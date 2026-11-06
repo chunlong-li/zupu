@@ -44,32 +44,18 @@
                         <div v-for="m in g.members" :key="m.id" class="memb" :data-mid="m.id">
                           <div class="m-name">{{ m.name }}</div>
                           <div class="m-detail">
-                            <div v-for="(d, di) in fields(m)" :key="di" class="d-col">{{ d }}</div>
-                            <!-- 嗣子：独立一列，样式与「生子」完全一致 -->
-                          <div v-if="m.adopt_children" class="d-col son-block">
-                            <div class="sg-label">{{ m.adopt_children }}</div>
-                            <div class="sg-names" v-if="m.adopt_son_list && m.adopt_son_list.length">
-                              <div v-for="s in m.adopt_son_list" :key="'as' + s.id" class="son-cell">
-                                <div class="son-name">{{ s.name }}</div>
-                                <div class="son-page" v-if="bioPageMap[s.id]" @click.stop="jumpToBio(bioPageMap[s.id])">{{ bioPageMap[s.id] }}</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div v-if="m.children || m.no_heir || m.lost_contact" class="d-col son-block">
-                              <div v-if="m.lost_contact" class="sg-label">{{ lostTxt(m, false) }}</div>
-                              <template v-else-if="m.no_heir && !(m.sons && m.sons.length)">
-                                <div class="sg-label">無嗣</div>
-                              </template>
-                              <template v-else>
-                              <div class="sg-label">{{ m.children }}</div>
-                              <div class="sg-names" v-if="m.sons && m.sons.length">
-                                <div v-for="s in m.sons" :key="'s' + s.id" class="son-cell">
-                                  <div class="son-name">{{ s.name }}</div>
-                                  <div class="son-page" v-if="bioPageMap[s.id]">{{ bioPageMap[s.id] }}</div>
+                            <template v-for="(d, di) in detailColsOf(m)" :key="di">
+                              <div v-if="d.t === 'text'" class="d-col">{{ d.v }}</div>
+                              <div v-else class="d-col son-block">
+                                <div class="sg-label">{{ d.label }}</div>
+                                <div class="sg-names" v-if="d.list && d.list.length">
+                                  <div v-for="s in d.list" :key="s.id" class="son-cell">
+                                    <div class="son-name">{{ s.name }}</div>
+                                    <div class="son-page" v-if="bioPageMap[s.id]">{{ bioPageMap[s.id] }}</div>
+                                  </div>
                                 </div>
                               </div>
-                              </template>
-                            </div>
+                            </template>
                           </div>
                         </div>
                       </div>
@@ -162,39 +148,21 @@
                   <!-- 左半：同一行排不下的成員（緊貼版心續排） -->
                   <div class="part left">
                     <div class="members">
-                      <div v-for="m in r.left" :key="'l' + (m.uid || m.id)" class="memb">
-                        <div class="m-name">{{ m.name }}</div>
-                        <div v-if="m.out_copy" class="m-detail">
-                          <div class="d-col">{{ m.adopt }}</div>
-                        </div>
-                        <div v-else class="m-detail">
-                          <div v-for="(d, di) in fields(m)" :key="di" class="d-col">{{ d }}</div>
-                          <div v-if="m.adopt" class="d-col">{{ m.adopt }}</div>
-                          <!-- 嗣子：独立一列，样式与「生子」完全一致 -->
-                          <div v-if="m.adopt_children" class="d-col son-block">
-                            <div class="sg-label">{{ m.adopt_children }}</div>
-                            <div class="sg-names" v-if="m.adopt_son_list && m.adopt_son_list.length">
-                              <div v-for="s in m.adopt_son_list" :key="'as' + s.id" class="son-cell">
-                                <div class="son-name">{{ s.name }}</div>
-                                <div class="son-page" v-if="bioPageMap[s.id]" @click.stop="jumpToBio(bioPageMap[s.id])">{{ bioPageMap[s.id] }}</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div v-if="m.children || m.no_heir || m.lost_contact" class="d-col son-block">
-                              <div v-if="m.lost_contact" class="sg-label">{{ lostTxt(m, false) }}</div>
-                              <template v-else-if="m.no_heir && !(m.sons && m.sons.length)">
-                                <div class="sg-label">無嗣</div>
-                              </template>
-                              <template v-else>
-                              <div class="sg-label">{{ m.children }}</div>
-                              <div class="sg-names" v-if="m.sons && m.sons.length">
-                                <div v-for="s in m.sons" :key="'s' + s.id" class="son-cell">
+                      <div v-for="(c, ci) in r.left" :key="'left' + ci" class="memb" :class="{ cont: !c.showName }">
+                        <div v-if="c.showName" class="m-name">{{ c.m.name }}</div>
+                        <div class="m-detail">
+                          <template v-for="(d, di) in c.cols" :key="di">
+                            <div v-if="d.t === 'text'" class="d-col">{{ d.v }}</div>
+                            <div v-else class="d-col son-block">
+                              <div class="sg-label">{{ d.label }}</div>
+                              <div class="sg-names" v-if="d.list && d.list.length">
+                                <div v-for="s in d.list" :key="s.id" class="son-cell">
                                   <div class="son-name">{{ s.name }}</div>
                                   <div class="son-page" v-if="bioPageMap[s.id]" @click.stop="jumpToBio(bioPageMap[s.id])">{{ bioPageMap[s.id] }}</div>
                                 </div>
                               </div>
-                              </template>
                             </div>
+                          </template>
                         </div>
                       </div>
                     </div>
@@ -206,39 +174,21 @@
                       <div class="gen-tag">第{{ r.gen }}世</div>
                     </div>
                     <div class="members">
-                      <div v-for="m in r.right" :key="'r' + (m.uid || m.id)" class="memb">
-                        <div class="m-name">{{ m.name }}</div>
-                        <div v-if="m.out_copy" class="m-detail">
-                          <div class="d-col">{{ m.adopt }}</div>
-                        </div>
-                        <div v-else class="m-detail">
-                          <div v-for="(d, di) in fields(m)" :key="di" class="d-col">{{ d }}</div>
-                          <div v-if="m.adopt" class="d-col">{{ m.adopt }}</div>
-                          <!-- 嗣子：独立一列，样式与「生子」完全一致 -->
-                          <div v-if="m.adopt_children" class="d-col son-block">
-                            <div class="sg-label">{{ m.adopt_children }}</div>
-                            <div class="sg-names" v-if="m.adopt_son_list && m.adopt_son_list.length">
-                              <div v-for="s in m.adopt_son_list" :key="'as' + s.id" class="son-cell">
-                                <div class="son-name">{{ s.name }}</div>
-                                <div class="son-page" v-if="bioPageMap[s.id]" @click.stop="jumpToBio(bioPageMap[s.id])">{{ bioPageMap[s.id] }}</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div v-if="m.children || m.no_heir || m.lost_contact" class="d-col son-block">
-                              <div v-if="m.lost_contact" class="sg-label">{{ lostTxt(m, false) }}</div>
-                              <template v-else-if="m.no_heir && !(m.sons && m.sons.length)">
-                                <div class="sg-label">無嗣</div>
-                              </template>
-                              <template v-else>
-                              <div class="sg-label">{{ m.children }}</div>
-                              <div class="sg-names" v-if="m.sons && m.sons.length">
-                                <div v-for="s in m.sons" :key="'s' + s.id" class="son-cell">
+                      <div v-for="(c, ci) in r.right" :key="'right' + ci" class="memb" :class="{ cont: !c.showName }">
+                        <div v-if="c.showName" class="m-name">{{ c.m.name }}</div>
+                        <div class="m-detail">
+                          <template v-for="(d, di) in c.cols" :key="di">
+                            <div v-if="d.t === 'text'" class="d-col">{{ d.v }}</div>
+                            <div v-else class="d-col son-block">
+                              <div class="sg-label">{{ d.label }}</div>
+                              <div class="sg-names" v-if="d.list && d.list.length">
+                                <div v-for="s in d.list" :key="s.id" class="son-cell">
                                   <div class="son-name">{{ s.name }}</div>
                                   <div class="son-page" v-if="bioPageMap[s.id]" @click.stop="jumpToBio(bioPageMap[s.id])">{{ bioPageMap[s.id] }}</div>
                                 </div>
                               </div>
-                              </template>
                             </div>
+                          </template>
                         </div>
                       </div>
                     </div>
@@ -804,12 +754,24 @@ function rowRank(g) {
 }
 
 // 成員詳情：拆成若干字段，每字段一豎列
+// 每列竖排能放多少字（按行高与字号估），超过就折成下一列 → 长生卒不会被截断
+const DETAIL_PER_COL = 8    // 字号保持 24px，一列 8 字（行高 0.95、无字距）
+function splitCol(text) {
+  const chars = Array.from(String(text || ''))
+  const out = []
+  for (let i = 0; i < chars.length; i += DETAIL_PER_COL) {
+    out.push(chars.slice(i, i + DETAIL_PER_COL).join(''))
+  }
+  return out
+}
 function fields(m) {
+  const raw = []
+  if (m.zihao) raw.push(m.zihao)
+  if (m.birth_death_short || m.birth_death) raw.push(m.birth_death_short || m.birth_death)
+  if (m.spouse) raw.push(m.spouse)
+  if (m.burial) raw.push(m.burial)
   const a = []
-  if (m.zihao) a.push(m.zihao)
-  if (m.birth_death_short || m.birth_death) a.push(m.birth_death_short || m.birth_death)
-  if (m.spouse) a.push(m.spouse)
-  if (m.burial) a.push(m.burial)
+  raw.forEach(t => { splitCol(t).forEach(x => a.push(x)) })   // 超长字段折成多列，继续往左排
   return a
 }
 
@@ -1111,21 +1073,98 @@ function splitBioCols(content, pageCaps, cpl) {
   return pages.length ? pages : [[['（正文待補充）'], []]]
 }
 
-// 從 start 起，能塞進 avail 寬度的成員數（至少 1 個，避免死循環）
-function take(list, start, avail) {
-  let used = 0
-  let k = 0
-  // 字号加大后每半幅最多 4 人：再多就会把最后一个挤进书芯/被裁。
-  const MAX_PER_HALF = 3
-  for (let i = start; i < list.length; i++) {
-    if (k >= MAX_PER_HALF) break
-    const w = list[i].w + (k === 0 ? 0 : MEMBER_GAP)
-    if (used + w > avail) break
-    used += w
-    k++
+// 口徑（2026-11-05 修正）：按「離屏量測到的自然寬度」累加，並把成員之間的 MEMBER_GAP 算進去。
+// 舊版用「1 格 = 34px、名字1格+明细分列+諸子」估容量，有兩個致命偏差：
+//   ① 完全沒算 .members 的 10px 間距（5 個人就漏算 40px）；
+//   ② 明細列實際只有 ~23px、諸子塊 ~30px，用 34px 一刀切，估出來的數和真實排版對不上。
+// 結果：實測第 9 頁 4/5 世被多塞 1 人，左半最後一人「知濤/予濤」被裁掉 28px。
+const TAKE_SAFETY = 2          // 取整/亞像素餘量
+function estMemberWidth(m) {
+  // 兜底估算（量測缺失時）：名字 34 + 名字與明細間距 4 + 每個明細列 23 + 諸子塊 30
+  const cols = fields(m).length + (m.adopt ? 1 : 0)
+  const hasSons = !!(m.children || m.no_heir || m.lost_contact || m.adopt_children)
+  return 34 + (cols || hasSons ? 4 : 0) + cols * 23 + (hasSons ? 30 : 0)
+}
+
+// 成員明細拆成「一列一列」，與下方模板一一對應（分頁時要按列跨半頁續排）
+function detailColsOf(m) {
+  const out = []
+  if (m.out_copy) {                       // 出繼：只掛「出繼」一列
+    if (m.adopt) out.push({ t: 'text', v: m.adopt })
+    return out
   }
-  if (k === 0 && start < list.length) k = 1
-  return k
+  fields(m).forEach(v => out.push({ t: 'text', v }))
+  if (m.adopt) out.push({ t: 'text', v: m.adopt })
+  if (m.adopt_children) out.push({ t: 'sons', label: m.adopt_children, list: m.adopt_son_list || [] })
+  if (m.children || m.no_heir || m.lost_contact) {
+    const noSons = m.lost_contact || (m.no_heir && !(m.sons && m.sons.length))
+    out.push({
+      t: 'sons',
+      label: m.lost_contact ? lostTxt(m, false) : (m.no_heir && !(m.sons && m.sons.length) ? '無嗣' : m.children),
+      list: noSons ? [] : (m.sons || []),
+    })
+  }
+  return out
+}
+
+// 一列明細的寬度佔位（含列間 2px 間距）
+function colsWidth(cols) {
+  if (!cols.length) return 0
+  return cols.reduce((s, c) => s + c.w, 0) + 2 * (cols.length - 1)
+}
+// 一整個人（名字＋明細全部）的寬度
+function itemWidth(it) {
+  return it.nameW + (it.cols.length ? 4 : 0) + colsWidth(it.cols)
+}
+
+// 裝一行：右半（族譜自右向左）先排，排不下的**續到左半**；
+// 關鍵口徑（屬主 2026-11-05）：同一個人允許佔兩半——名字留在右半、明細/子女列續到左半；
+// 只有左半也放不下時，整人才換到下一頁（不把人拆到兩張紙上）。
+function packRow(list, rightAvail, leftAvail) {
+  const right = []
+  const left = []
+  let usedR = 0
+  let i = 0
+  for (; i < list.length; i++) {
+    const it = list[i]
+    const need = itemWidth(it) + (right.length ? MEMBER_GAP : 0)
+    if (usedR + need <= rightAvail - TAKE_SAFETY) {
+      right.push({ m: it.m, cols: it.cols.map(c => c.def), showName: true })
+      usedR += need
+      continue
+    }
+    // 整個人放不下 → 名字＋能放下的明細列留在右半，其餘續到左半
+    const room = rightAvail - TAKE_SAFETY - usedR - (right.length ? MEMBER_GAP : 0)
+    if (it.cols.length && room > it.nameW + 6) {
+      let acc = it.nameW + 4
+      let cut = 0
+      for (let ci = 0; ci < it.cols.length; ci++) {
+        const add = it.cols[ci].w + (ci ? 2 : 0)
+        if (acc + add > room) break
+        acc += add
+        cut++
+      }
+      const tailW = colsWidth(it.cols.slice(cut))
+      if (cut > 0 && cut < it.cols.length && tailW <= leftAvail - TAKE_SAFETY) {
+        right.push({ m: it.m, cols: it.cols.slice(0, cut).map(c => c.def), showName: true })
+        left.push({ m: it.m, cols: it.cols.slice(cut).map(c => c.def), showName: false, cont: true, w: tailW })
+        i++
+        usedR = rightAvail                  // 右半已排满
+        break
+      }
+    }
+    break                                  // 连名字都放不下 → 该人整个进左半
+  }
+  // 左半：先接「续列」，再按整人继续排
+  let usedL = left.reduce((s, c) => s + (c.w || 0), 0)
+  for (; i < list.length; i++) {
+    const it = list[i]
+    const need = itemWidth(it) + (left.length ? MEMBER_GAP : 0)
+    if (left.length && usedL + need > leftAvail - TAKE_SAFETY) break
+    left.push({ m: it.m, cols: it.cols.map(c => c.def), showName: true })
+    usedL += need
+  }
+  return { right, left, rest: list.slice(i) }
 }
 
 // 行傳列（扁列）：全卷成員去重（按世代先後、同世長幼）；每人一列，其配偶（配/繼配/側室）緊接其後各一列
@@ -1297,27 +1336,43 @@ function buildSheets() {
   if (mr && ml) {
     // 成员字号加大后，行内容易顶到纸右缘/被裁：按实测宽度再留 12% 余量，
     // 每行少放 1~2 人，宁多翻页，不裁字、不越界。
-    const CHART_FIT = 0.88
+    const CHART_FIT = 0.98   // 原来留 12% 余量，导致右半明明有空位却排不进人
     const rightAvail = mr.clientWidth * CHART_FIT
     const leftAvail = ml.clientWidth * CHART_FIT
     const wmap = {}
-    root.querySelectorAll('.measure .memb').forEach((el) => { wmap[el.dataset.mid] = el.offsetWidth })
+    const colmap = {}          // 每人每列的自然寬度（續排時要按列切）
+    root.querySelectorAll('.measure .memb').forEach((el) => {
+      wmap[el.dataset.mid] = el.offsetWidth
+      const nmEl = el.querySelector('.m-name')
+      const colEls = [...el.querySelectorAll('.m-detail > *')]
+      colmap[el.dataset.mid] = { name: nmEl ? nmEl.offsetWidth : 0, cols: colEls.map(c => c.offsetWidth) }
+    })
+    // 組成「可拆列」的成員項：整人寬度用實測值；拆列時用逐列實測寬
+    const makeItem = (m) => {
+      const defs = detailColsOf(m)
+      const meas = colmap[m.id] || null
+      const nameW = (meas && meas.name) || 34
+      const cols = defs.map((d, i) => ({
+        def: d,
+        w: (meas && meas.cols[i] > 0) ? meas.cols[i] : (d.t === 'sons' ? 30 : 23),
+      }))
+      const it = { m, nameW, cols, w: 0 }
+      it.w = wmap[m.id] || itemWidth(it)
+      return it
+    }
 
     rawPages.value.forEach((pg) => {
       const gens = pg.generations || []
       const q = gens.map((g) => ({
         gen: g.gen,
         rank: rowRank(g),
-        list: (g.members || []).map((m) => ({ m, w: wmap[m.id] || 0 })),
+        list: (g.members || []).map(makeItem),
       }))
-      // 本頁：每世先填右半，再填左半
+      // 本頁：每世先填右半，排不下的「續到左半」（同一個人可佔兩半），左半也放不下才換頁
       const rows = q.map((item) => {
-        const a = take(item.list, 0, rightAvail)
-        const b = take(item.list, a, leftAvail)
-        const right = item.list.slice(0, a).map((x) => x.m)
-        const left = item.list.slice(a, a + b).map((x) => x.m)
-        item.list = item.list.slice(a + b)
-        return { gen: item.gen, rank: item.rank, right, left }
+        const packed = packRow(item.list, rightAvail, leftAvail)
+        item.list = packed.rest
+        return { gen: item.gen, rank: item.rank, right: packed.right, left: packed.left }
       })
       model.push({ kind: 'chart', pageNo: pageNo++, headName: pg.head_name, startGen: pg.start_gen, endGen: pg.end_gen, rows })
       const gStart = model.length - 1
@@ -1330,13 +1385,12 @@ function buildSheets() {
         let filled = false
         for (const item of q) {
           if (!item.list.length) continue
-          const a = take(item.list, 0, rightAvail)
-          const b = take(item.list, a, leftAvail)
-          if (a + b <= 0) continue
+          const packed = packRow(item.list, rightAvail, leftAvail)
+          if (!packed.right.length && !packed.left.length) continue
           const rr = crows.find((x) => x.gen === item.gen)
-          rr.right = item.list.slice(0, a).map((x) => x.m)
-          rr.left = item.list.slice(a, a + b).map((x) => x.m)
-          item.list = item.list.slice(a + b)
+          rr.right = packed.right
+          rr.left = packed.left
+          item.list = packed.rest
           filled = true
         }
         if (!filled) break
@@ -1803,11 +1857,21 @@ onBeforeUnmount(() => {
 /* 離屏量測，不參與正常排版 */
 .measure { position: fixed; left: -99999px; top: 0; pointer-events: none; }
 .measure .sheet { display: block; }
+/* 量測區的成員必須保持「自然寬度」，不能被子項壓縮：
+   .members 只有半幅寬，若把一整世的人都塞進去，flex 子項會被 shrink，
+   量到的寬度就比實際排版小 → 以為放得下、實際溢出被裁。 */
+.measure .memb { flex: 0 0 auto; }
+.measure .memb .d-col,
+.measure .memb .m-detail,
+.measure .memb .sg-names,
+.measure .memb .son-cell { flex: 0 0 auto; }
 
 /* ===== A3 横版 ===== */
 .page { width: 1587px; height: 1123px; background: #fffdf6; display: flex; padding: 9px;
         color: #1a1a1a; font-family: "Songti SC", "SimSun", "STSong", "宋体", serif; }
-.board { flex: 1; border: 1px solid #1a1a1a; padding: 5px; }
+/* min-width:0 必须：.board 是 .page（flex）的子项，默认 min-width:auto = 内容最小宽。
+   某半幅被塞进过多成员时，.board 会被内容顶宽（实测第 9 页 4/5 世：纸 1587、板 1640、书耳跑到纸外 62px）。 */
+.board { flex: 1; min-width: 0; border: 1px solid #1a1a1a; padding: 5px; }
 .bin   { border: 3px solid #1a1a1a; height: 100%; display: flex; }
 
 /* ===== 封面（横版） ===== */
@@ -1895,9 +1959,9 @@ onBeforeUnmount(() => {
 
 .sg-plate-page-no { position: absolute; right: 16px; bottom: 10px; font-size: 14px; color: #333; }
 .gen-row { flex: 1; display: flex; align-items: stretch; min-height: 0; }
-.part { display: flex; flex-direction: row-reverse; align-items: stretch; min-width: 0; overflow: hidden; }
-.part.left  { flex: 1; padding: 10px 12px 8px 8px; }
-.part.right { flex: 1; padding: 10px 8px 8px 12px; transform: translateX(4px); }
+.part { display: flex; flex-direction: row-reverse; align-items: stretch; min-width: 0; overflow: hidden; max-width: 100%; }
+.part.left  { flex: 1; padding: 4px 12px 2px 8px; }
+.part.right { flex: 1; padding: 4px 8px 2px 12px; transform: translateX(4px); }
 .gen-row:not(:last-child) .part { border-bottom: 1px solid #b9ad91; }
 .gap { flex: 0 0 84px; }
 
@@ -1908,8 +1972,10 @@ onBeforeUnmount(() => {
             padding: 7px 5px; font-size: 19px; letter-spacing: 1px; }
 
 .members { flex: 1; display: flex; flex-direction: row-reverse; align-items: stretch;
-           gap: 10px; min-width: 0; }
-.memb { display: flex; flex-direction: row-reverse; align-items: stretch; gap: 4px; }
+           gap: 10px; min-width: 0; max-width: 100%; overflow: hidden; }
+.memb { display: flex; flex-direction: row-reverse; align-items: stretch; gap: 4px; flex: 0 0 auto; }
+/* 續排格：名字在右半、明細列從左半接著排 —— 只有明細，沒有名字 */
+.memb.cont { flex: 0 0 auto; }
 
 .m-name { writing-mode: vertical-rl; text-orientation: upright;
           font-family: "KaiTi", "STKaiti", "Kaiti SC", "楷体", serif; font-size: 28px; font-weight: 700;
@@ -1919,7 +1985,7 @@ onBeforeUnmount(() => {
 .m-detail { display: flex; flex-direction: row-reverse; align-items: stretch; gap: 2px;
             font-family: "KaiTi", "STKaiti", "Kaiti SC", "楷体", serif;
             font-size: 24px; color: #1a1a1a; }
-.d-col { writing-mode: vertical-rl; text-orientation: upright; line-height: 1.25; letter-spacing: 2px; }
+.d-col { writing-mode: vertical-rl; text-orientation: upright; line-height: 0.95; letter-spacing: 0; }
 /* 諸子：仿古譜 ——「生子N」在上，諸子名列於其下一排（由右往左），名下有頁碼（可點，跳行傳） */
 .d-col.son-block { writing-mode: horizontal-tb; display: flex; flex-direction: column;
                    align-items: flex-end; gap: 2px; }

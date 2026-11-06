@@ -161,6 +161,33 @@
     <el-card class="section update-log">
       <template #header><span>版本更新日志</span></template>
       <el-collapse v-model="activeLogs">
+                                      <el-collapse-item name="logStable1313">
+            <template #title>
+              <span class="log-title">v1.3.13</span>
+              <span class="log-count">2026-11-06 发布</span>
+            </template>
+            <div class="log-entry">
+              <div class="log-entry-head">
+                <span class="log-ver">v1.3.13</span>
+                <span class="log-date">2026-11-06</span>
+              </div>
+              <div class="log-entry-body">
+                <p><b>📿 苏氏垂珠体（A3 谱书）</b></p>
+                <p>· 修「内容超出纸张、名字被裁」：离屏量测区被内容顶宽，每半幅会多塞一人、纸张被撑开（书耳跑到纸外）；</p>
+                <p>· 改为按实测宽度 + 成员间距排版，纸面固定 1587×1123，内容不再能顶宽纸张；</p>
+                <p>· 同一个人可以占左右两半：姓名留在右半，「生子N／诸子名」等明细列续到左半继续排，左半也放不下才整人换页。</p>
+                <p><b>📖 五世一提书页版（纯文字连线 → 导出 → 五世一提）</b></p>
+                <p>· SVG 与书芯严丝合缝（1507×1087），不再每页底部被裁掉一截；</p>
+                <p>· 版式改为纯「上下」：五世块只上下摞、不左右并排；一块太宽就在半幅内折成上下几带；</p>
+                <p>· 折行连线从同一横杠的末端（如李少泽）延伸，沿本块边下到两带之间的空档，再接到下一带的头——不穿名字、不跨版心；</p>
+                <p>· 名字与配偶的间距缩到原来的约 1/4，字号整体 +2px（姓名 17 / 配偶 15）；</p>
+                <p>· 右下角「回到顶部／返回」加大到 52px 并左右对齐；</p>
+                <p>· 新增「漏人自检」：若有人没排进书页，页面顶部会用红字列出名字。</p>
+                <p><b>其它</b></p>
+                <p>· 更新日志默认展开最新一条。</p>
+              </div>
+            </div>
+          </el-collapse-item>
                                       <el-collapse-item name="logStable1312">
             <template #title>
               <span class="log-title">v1.3.12</span>
@@ -1943,7 +1970,7 @@ function compareVersion(a, b) {
 onMounted(async () => {
   try {
     const { data } = await api.get('/settings/version')
-    currentVersion.value = data.version || '1.3.12'
+    currentVersion.value = data.version || '1.3.13'
   } catch (e) { /* ignore */ }
   checkManifestUpdate() // 打开页面自动检查一次更新
 })

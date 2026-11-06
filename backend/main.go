@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"familytree/internal/backup"
@@ -32,6 +34,24 @@ func main() {
 		}
 		// 控制台输出用 UTF-8、窗口标题带上说明（无控制台时自动跳过）
 		proc.InitConsole("族谱系统 - 关闭此窗口即停止服务")
+	}
+
+	// 本地应急重置（不挂任何 HTTP 路由，只能在容器/宿主机内执行）：
+	//   docker exec -it familytree /app/familytree --reset-admin-password [用户名]
+	// 用途：管理员密码彻底忘记、无法登录网页时，从宿主机重置一次。
+	// 安全性：执行它需要宿主机/容器控制权（等价 root），而拥有该权限的人本来就能直接改库，
+	//         因此不增加攻击面；输出只打印到 stdout，不写日志、不落盘。
+	if len(os.Args) > 1 && os.Args[1] == "--reset-admin-password" {
+		runResetPassword(os.Args)
+		return
+	}
+	//   docker exec -it familytree /app/familytree --add-admin <用户名>
+	// 新建一个超级管理员（或把已有账号提升为超级管理员），随机 12 位密码。
+	// 场景：全库只有一个管理员、密码又忘了，先用 --reset-admin-password 救回来；
+	//       或者平时就多留一个管理账号，避免单点。
+	if len(os.Args) > 1 && os.Args[1] == "--add-admin" {
+		runAddAdmin(os.Args)
+		return
 	}
 
 	cfg := config.Load()
@@ -179,4 +199,74 @@ func copyFile(src, dst string) error {
 	defer out.Close()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// runResetPassword 本地应急重置：随机 12 位密码，强制下次登录修改。
+func runResetPassword(args []string) {
+	cfg := config.Load()
+	database, err := db.Init(cfg)
+	if err != nil {
+		fmt.Println("初始化数据库失败:", err)
+		os.Exit(1)
+	}
+	defer database.Close()
+	handler.EnsureUserTable(database)
+
+	username := "admin"
+	if len(args) > 2 && strings.TrimSpace(args[2]) != "" {
+		username = strings.TrimSpace(args[2])
+	}
+	var id int64
+	if err := database.QueryRow(`SELECT id FROM users WHERE username = ?`, username).Scan(&id); err != nil {
+		fmt.Printf("未找到用户 %s：%v\n", username, err)
+		os.Exit(1)
+	}
+	pw := handler.RandomNumeric(12)
+	if _, err := database.Exec(`UPDATE users SET password = ?, need_change_pw = 1 WHERE id = ?`, handler.HashPassword(pw), id); err != nil {
+		fmt.Println("重置失败:", err)
+		os.Exit(1)
+	}
+	_, _ = database.Exec(`INSERT INTO operation_logs (username, action, detail, created_at) VALUES (?, ?, ?, datetime('now'))`,
+		"local-cli", "reset-password", "通过本地命令重置 "+username+" 的密码")
+	fmt.Printf("已重置用户 %s 的密码：%s\n（请登录后立即修改；此密码只显示这一次）\n", username, pw)
+}
+
+// runAddAdmin 本地新建/提升超级管理员（仅容器内可执行，不挂 HTTP 路由）。
+func runAddAdmin(args []string) {
+	if len(args) < 3 || strings.TrimSpace(args[2]) == "" {
+		fmt.Println("用法: familytree --add-admin <用户名>")
+		os.Exit(1)
+	}
+	username := strings.TrimSpace(args[2])
+	cfg := config.Load()
+	database, err := db.Init(cfg)
+	if err != nil {
+		fmt.Println("初始化数据库失败:", err)
+		os.Exit(1)
+	}
+	defer database.Close()
+	handler.EnsureUserTable(database)
+
+	pw := handler.RandomNumeric(12)
+	var id int64
+	err = database.QueryRow(`SELECT id FROM users WHERE username = ?`, username).Scan(&id)
+	if err == nil {
+		// 已存在：提升为超级管理员并重置密码
+		if _, e := database.Exec(`UPDATE users SET role = ?, password = ?, need_change_pw = 1 WHERE id = ?`,
+			handler.RoleSuperAdmin, handler.HashPassword(pw), id); e != nil {
+			fmt.Println("更新失败:", e)
+			os.Exit(1)
+		}
+		fmt.Printf("已把用户 %s 提升为超级管理员，新密码：%s\n", username, pw)
+	} else {
+		if _, e := database.Exec(`INSERT INTO users (username, password, role, branch, need_change_pw) VALUES (?, ?, ?, '', 1)`,
+			username, handler.HashPassword(pw), handler.RoleSuperAdmin); e != nil {
+			fmt.Println("创建失败:", e)
+			os.Exit(1)
+		}
+		fmt.Printf("已创建超级管理员 %s，初始密码：%s\n", username, pw)
+	}
+	_, _ = database.Exec(`INSERT INTO operation_logs (username, action, detail, created_at) VALUES (?, ?, ?, datetime('now'))`,
+		"local-cli", "add-admin", "通过本地命令新增/提升管理员 "+username)
+	fmt.Println("（请登录后立即修改；此密码只显示这一次）")
 }

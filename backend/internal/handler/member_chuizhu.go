@@ -431,8 +431,10 @@ func (h *MemberHandler) ListChuiZhu(c *gin.Context) {
 
 	// 外纪 + 内纪始祖 + 内纪最大世代
 	// 过滤模式：以范围内最小内纪世代为「起世」，该世代无范围内父辈者即各页之「提」
+	// 起世 = 范围内最小的内纪世代（不论是否按房支过滤）。
+	// 以前只在「按房支过滤」时才这样算，导致直接从五世起修的谱（没有第一世）生成 0 页。
 	baseGen := 1
-	if bcond != "" {
+	{
 		minGen := 0
 		for _, n := range nodes {
 			if !includeNode(n) || n.recordType == "外纪" || int(n.generation) <= 0 {
@@ -489,18 +491,22 @@ func (h *MemberHandler) ListChuiZhu(c *gin.Context) {
 	}
 
 	// 生成全部页面（广度优先：「起世」各「提」→ 起世+4各人 → +4各人 → …）
+	// 人数少时自动加大「一提」的世数：同样的纸面上多放几世，避免一页只有几个人、大片空白
+	// 固定五世一提（用户要求：不要按人数自动加世数）
+	step := chuiZhuStep
+
 	var pages []ChuiZhuPage
 	pageIdx := 0
 	for _, r := range innerRoots {
 		pageIdx++
-		page, _ := buildChuiZhuPage(r, baseGen, pageIdx)
+		page, _ := buildChuiZhuPage(r, baseGen, pageIdx, step)
 		pages = append(pages, page)
 	}
-	for gen := baseGen + chuiZhuStep; gen <= innerMaxGen; gen += chuiZhuStep {
+	for gen := baseGen + step; gen <= innerMaxGen; gen += step {
 		for _, n := range order {
 			if int(n.generation) == gen && len(n.children) > 0 {
 				pageIdx++
-				page, _ := buildChuiZhuPage(n, gen, pageIdx)
+				page, _ := buildChuiZhuPage(n, gen, pageIdx, step)
 				pages = append(pages, page)
 			}
 		}
@@ -519,17 +525,17 @@ func (h *MemberHandler) ListChuiZhu(c *gin.Context) {
 }
 
 // buildChuiZhuPage 以 head 为「提」头，组装一页（head + 其后代四世），返回页 + 末排成员（供递归）
-func buildChuiZhuPage(head *chuiZhuNode, startGen, idx int) (ChuiZhuPage, []*chuiZhuNode) {
-	gens := make([][]*chuiZhuNode, chuiZhuGens)
+func buildChuiZhuPage(head *chuiZhuNode, startGen, idx int, step int) (ChuiZhuPage, []*chuiZhuNode) {
+	gens := make([][]*chuiZhuNode, step+1)
 	gens[0] = []*chuiZhuNode{head}
 
 	var walk func(n *chuiZhuNode)
 	walk = func(n *chuiZhuNode) {
 		for _, c := range n.children {
 			ci := int(c.generation) - startGen
-			if ci >= 1 && ci < chuiZhuGens {
+			if ci >= 1 && ci < step+1 {
 				gens[ci] = append(gens[ci], c)
-				if ci < chuiZhuGens-1 {
+				if ci < step {
 					walk(c)
 				}
 			}
@@ -538,7 +544,7 @@ func buildChuiZhuPage(head *chuiZhuNode, startGen, idx int) (ChuiZhuPage, []*chu
 	walk(head)
 
 	// 页内叶子权重（父 span = 诸子 span 之和；页末排 span=1）
-	leafGen := startGen + chuiZhuGens - 1
+	leafGen := startGen + step
 	var layout func(n *chuiZhuNode) int
 	layout = func(n *chuiZhuNode) int {
 		if len(n.children) == 0 || int(n.generation) >= leafGen {
@@ -559,7 +565,7 @@ func buildChuiZhuPage(head *chuiZhuNode, startGen, idx int) (ChuiZhuPage, []*chu
 		HeadID:      head.id,
 		HeadName:    chuiZhuName(head),
 		StartGen:    startGen,
-		EndGen:      startGen + chuiZhuGens - 1,
+		EndGen:      startGen + step,
 		Generations: []ChuiZhuGeneration{},
 	}
 	for gi := 0; gi < chuiZhuGens; gi++ {
@@ -699,11 +705,28 @@ func formatZihao(zi, hao string) string {
 }
 
 func yearOf(s string) string {
+	s = strings.TrimSpace(s)
 	if s == "" {
+		return ""
+	}
+	// 「去世 / 已逝 / 殁 / 卒」等文字标记不是年份：当作未知，避免出现「卒去世」
+	switch s {
+	case "去世", "已逝", "已故", "殁", "卒", "亡故", "逝世", "已卒":
 		return ""
 	}
 	if i := strings.Index(s, "-"); i > 0 {
 		return s[:i]
+	}
+	// 没有数字的纯文字（如「不详」）也当未知
+	hasDigit := false
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			hasDigit = true
+			break
+		}
+	}
+	if !hasDigit {
+		return ""
 	}
 	return s
 }

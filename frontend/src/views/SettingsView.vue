@@ -565,7 +565,14 @@ function openResetPw(user) {
     type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消'
   }).then(async () => {
     try {
-      const { data } = await api.post(`/users/${user.id}/reset-password`)
+      // 二次验证：必须输入操作者自己的密码（防止 token 被盗后被批量改密）
+      const { value: myPw } = await ElMessageBox.prompt(
+        `重置「${user.username}」的密码前，请先输入你自己的登录密码以确认身份：`,
+        '身份确认',
+        { inputType: 'password', confirmButtonText: '确认重置', cancelButtonText: '取消' }
+      )
+      if (!myPw) { ElMessage.warning('未输入密码，已取消'); return }
+      const { data } = await api.post(`/users/${user.id}/reset-password`, { my_password: myPw })
       ElMessage.success('已重置')
       if (data && data.password) showPw(user.username, data.password)
     } catch (e) {

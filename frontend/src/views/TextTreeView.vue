@@ -13,6 +13,8 @@
             <el-dropdown-item command="png">🖼️ PNG（高清 2×）</el-dropdown-item>
             <el-dropdown-item command="svg">📐 SVG（矢量图）</el-dropdown-item>
             <el-dropdown-item command="pdf" divided>🖨️ PDF（打印用）</el-dropdown-item>
+            <el-dropdown-item command="book">📖 五世一提（A3 书页版）</el-dropdown-item>
+            <el-dropdown-item command="long">📜 长页（整幅 SVG，不分页）</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -60,6 +62,9 @@
         </g>
       </svg>
     </div>
+    <el-dialog v-model="bookVisible" title="五世一提 · 书页版（A3 横版）" fullscreen append-to-body>
+      <TextTreeBookPages :tanghao="bookTanghao" />
+    </el-dialog>
   </div>
 </template>
 
@@ -67,11 +72,14 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import api from '../api'
 import { memberKnown, lostContactText } from '../utils/memberFlags'
+import TextTreeBookPages from './TextTreeBookPages.vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 
 const members = ref([])
 const zoom = ref(1)
 const showGenLabel = ref(true)
+const bookVisible = ref(false)
+const bookTanghao = ref('族谱')
 
 const NAME_LH = 18      // 竖排每字行高
 const TOP = 28          // 顶部留白
@@ -185,6 +193,8 @@ function downloadBlob(name, blob) {
   setTimeout(() => URL.revokeObjectURL(a.href), 3000)
 }
 function doExport(cmd) {
+  if (cmd === 'book') { bookVisible.value = true; return }
+  if (cmd === 'long') return exportSvg()   // 长页 = 完整不分页的整幅 SVG
   if (cmd === 'png') return exportPng()
   if (cmd === 'svg') return exportSvg()
   if (cmd === 'pdf') return exportPdf()

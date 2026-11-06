@@ -160,6 +160,9 @@ func isBcryptHash(stored string) bool {
 }
 
 // 密码哈希（bcrypt，cost=12）
+// HashPassword 供本地命令复用
+func HashPassword(pw string) string { return hashPassword(pw) }
+
 func hashPassword(pw string) string {
 	// bcrypt 只处理前 72 字节，超长会被拒绝或静默截断，这里显式返回空以触发上层报错
 	if len([]byte(pw)) > 72 {
@@ -595,6 +598,9 @@ func deriveNamePassword(name, salt string) string {
 }
 
 // randomNumeric 生成 n 位随机纯数字密码
+// RandomNumeric 供本地命令（--reset-admin-password）复用：生成 n 位数字随机串
+func RandomNumeric(n int) string { return randomNumeric(n) }
+
 func randomNumeric(n int) string {
 	buf := make([]byte, n)
 	if _, err := rand.Read(buf); err != nil {
@@ -817,6 +823,39 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 
 	id := c.Param("id")
 
+	// ① 二次校验：调用者必须再次输入自己的密码，防止 token 被盗后被批量改密
+	var body struct {
+		MyPassword string `json:"my_password"`
+	}
+	_ = c.ShouldBindJSON(&body) // 不强制要求 JSON，缺省则视为未提供
+	caller := c.GetString("username")
+	callerID := c.GetInt64("user_id")
+	if callerID == 0 && caller != "" && caller != "本机" {
+		// 老 token 里可能没有 user_id：按用户名补查一次
+		_ = h.DB.QueryRow(`SELECT id FROM users WHERE username = ?`, caller).Scan(&callerID)
+	}
+	if caller == "" || caller == "本机" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "本机免登录模式不允许重置密码，请用管理员账号登录"})
+		return
+	}
+	{
+		var myHash string
+		if err := h.DB.QueryRow(`SELECT password FROM users WHERE id = ?`, callerID).Scan(&myHash); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无法校验操作者身份"})
+			return
+		}
+		okPw, _ := verifyPassword(myHash, body.MyPassword)
+		if body.MyPassword == "" || !okPw {
+			c.JSON(http.StatusForbidden, gin.H{"error": "需要输入你自己的密码才能重置他人密码"})
+			return
+		}
+		// ② 限频：同一操作者 1 分钟内最多 3 次
+		if !resetRateAllow(callerID) {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "操作过于频繁，请稍后再试（每分钟最多 3 次）"})
+			return
+		}
+	}
+
 	// 不允许越权重置超级管理员密码（除非调用者本人也是超级管理员）
 	callerRole := c.GetString("role")
 	var targetRole string
@@ -1015,4 +1054,29 @@ func EnsureUserTable(db *sql.DB) {
 		db.Exec(`UPDATE users SET password = ?, need_change_pw = 1 WHERE username = 'admin'`,
 			hashPassword("admin123"))
 	}
+}
+
+// resetRateAllow 重置密码的简单限频：同一操作者 1 分钟内最多 3 次。
+var (
+	resetRateMu    sync.Mutex
+	resetRateState = map[int64][]time.Time{}
+)
+
+func resetRateAllow(userID int64) bool {
+	resetRateMu.Lock()
+	defer resetRateMu.Unlock()
+	now := time.Now()
+	win := now.Add(-time.Minute)
+	list := resetRateState[userID][:0]
+	for _, t := range resetRateState[userID] {
+		if t.After(win) {
+			list = append(list, t)
+		}
+	}
+	if len(list) >= 3 {
+		resetRateState[userID] = list
+		return false
+	}
+	resetRateState[userID] = append(list, now)
+	return true
 }
