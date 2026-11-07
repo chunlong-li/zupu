@@ -1,0 +1,26 @@
+<view class="card">
+  <input class="search" placeholder="搜索姓名 / 字 / 号" value="{{kw}}" bindinput="onKw" />
+  <view class="filters">
+    <picker range="{{branches}}" range-key="name" value="{{branchIdx}}" bindchange="onBranch">
+      <view class="chip">{{branches[branchIdx].name}}</view>
+    </picker>
+    <picker range="{{gens}}" value="{{genIdx}}" bindchange="onGen">
+      <view class="chip">{{gens[genIdx]}}</view>
+    </picker>
+  </view>
+  <view class="muted" style="margin-top:8rpx">共 {{total}} 人</view>
+</view>
+
+<view class="card" wx:for="{{list}}" wx:key="id" bindtap="goDetail" data-id="{{item.id}}">
+  <view class="row">
+    <view>
+      <text style="font-size:32rpx">{{item.displayName}}</text>
+      <text class="muted" style="margin-left:12rpx">{{item.genText}}</text>
+      <text wx:if="{{item.zi}}" class="muted" style="margin-left:12rpx">字 {{item.zi}}</text>
+    </view>
+    <text class="{{item.deathText === '在世' ? 'muted' : 'dead'}}">{{item.deathText}}</text>
+  </view>
+</view>
+
+<view wx:if="{{!list.length && !loading}}" class="empty">没有成员</view>
+<view wx:if="{{hasMore}}" class="empty">上拉加载更多…</view>

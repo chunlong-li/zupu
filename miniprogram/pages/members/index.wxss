@@ -1,0 +1,4 @@
+.search { background: #f5efe3; border-radius: 8rpx; padding: 16rpx 20rpx; }
+
+.filters { display: flex; gap: 16rpx; margin-top: 16rpx; }
+.chip { background: #f0e4d2; color: #8c5a3c; border-radius: 24rpx; padding: 8rpx 24rpx; font-size: 24rpx; }

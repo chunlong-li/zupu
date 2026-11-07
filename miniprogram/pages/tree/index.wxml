@@ -1,0 +1,17 @@
+<view class="canvas" bindtouchstart="onTouchStart" bindtouchmove="onTouchMove" bindtouchend="onTouchEnd">
+  <view class="stage" style="width:{{stageW}}px;height:{{stageH}}px;transform: translate({{tx}}px, {{ty}}px) scale({{scale}})">
+    <!-- 连线 -->
+    <view wx:for="{{edges}}" wx:key="id" class="edge"
+          style="left:{{item.left}}px;top:{{item.top}}px;width:{{item.len}}px;transform: rotate({{item.deg}}deg)"></view>
+    <!-- 节点 -->
+    <view wx:for="{{nodes}}" wx:key="id" class="node"
+          style="left:{{item.x}}px;top:{{item.y}}px" bindtap="goDetail" data-id="{{item.id}}">
+      <text class="nm">{{item.name}}</text>
+      <text class="gen">{{item.genText}}</text>
+    </view>
+  </view>
+</view>
+<view class="tools">
+  <view class="tool" bindtap="reset">复位</view>
+</view>
+<view wx:if="{{loading}}" class="empty">载入中…</view>

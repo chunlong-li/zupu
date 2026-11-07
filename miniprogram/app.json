@@ -1,0 +1,37 @@
+{
+  "pages": [
+    "pages/members/index",
+    "pages/detail/index",
+    "pages/tree/index",
+    "pages/login/index",
+    "pages/mine/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "族谱",
+    "navigationBarBackgroundColor": "#3a2a18",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5efe3"
+  },
+  "tabBar": {
+    "color": "#8c7a63",
+    "selectedColor": "#8c5a3c",
+    "backgroundColor": "#fffaf0",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/members/index",
+        "text": "成员"
+      },
+      {
+        "pagePath": "pages/tree/index",
+        "text": "世系图"
+      },
+      {
+        "pagePath": "pages/mine/index",
+        "text": "我的"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

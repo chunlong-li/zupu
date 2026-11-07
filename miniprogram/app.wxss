@@ -1,0 +1,12 @@
+/* 与 web 端同一套配色：米色底 + 棕金标题 */
+page { background: #f5efe3; color: #2b2118; font-size: 28rpx; }
+.card { background: #fffaf0; border-radius: 12rpx; padding: 24rpx; margin: 20rpx; box-shadow: 0 2rpx 12rpx rgba(90, 60, 30, .08); }
+.title { font-size: 34rpx; font-weight: 600; color: #8c5a3c; }
+.muted { color: #8c7a63; font-size: 24rpx; }
+.row { display: flex; align-items: center; justify-content: space-between; padding: 16rpx 0; border-bottom: 1rpx solid #efe3d0; }
+.row:last-child { border-bottom: none; }
+.label { color: #8c7a63; }
+.value { color: #2b2118; }
+.dead { color: #b4552d; }
+.btn { background: #8c5a3c; color: #fff; border-radius: 8rpx; }
+.empty { text-align: center; color: #a89880; padding: 60rpx 0; }

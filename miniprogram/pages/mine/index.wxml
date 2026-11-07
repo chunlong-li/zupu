@@ -1,0 +1,13 @@
+<view class="card">
+  <view class="title">{{user ? user.username : '未登录'}}</view>
+  <view class="muted" style="margin-top:8rpx">{{user ? (user.role || '') : ''}}</view>
+</view>
+
+<view class="card">
+  <view class="row"><text class="label">接入方式</text><text class="value">{{modeText}}</text></view>
+  <view class="row"><text class="label">服务器</text><text class="value">{{serverText}}</text></view>
+</view>
+
+<view class="card">
+  <button class="btn" bindtap="logout">退出登录</button>
+</view>
