@@ -1,3 +1,13 @@
+# ===== 阶段0：构建前端 =====
+# 云托管从 GitHub 拉代码时，仓库里没有 dist（开源导出会排除构建产物），
+# 所以这里在镜像内构建前端，不能再依赖宿主机的 frontend/dist。
+FROM node:20-alpine AS frontend
+WORKDIR /web
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
 # ===== 阶段1：构建后端 =====
 FROM golang:alpine AS backend
 ENV GOPROXY=https://goproxy.cn,direct
@@ -26,8 +36,8 @@ RUN ln -sf /usr/share/zoneinfo/$TZ /etc/localtime && echo "$TZ" > /etc/timezone
 
 WORKDIR /app
 COPY --from=backend /app/familytree .
-# 直接使用宿主预编译的前端 dist
-COPY frontend/dist ./web
+# 前端产物来自阶段0
+COPY --from=frontend /web/dist ./web
 
 # 备份脚本（保留 daily/monthly 命令兼容，供手动调用）
 RUN printf '#!/bin/sh\nTYPE=${1:-daily}\nBACKUP_DIR=/data/backup\nDATE=$(date +%%Y%%m%%d_%%H%%M%%S)\nmkdir -p $BACKUP_DIR/$TYPE\ncd /data && zip -rq $BACKUP_DIR/$TYPE/familytree_${TYPE}_$DATE.zip data/ upload/\nif [ "$TYPE" = "daily" ]; then\n  find $BACKUP_DIR/$TYPE -name "familytree_daily_*.zip" -mtime +30 -delete\nfi\n' > /app/backup.sh && \
