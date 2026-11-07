@@ -25,6 +25,16 @@
       <el-button size="small" @click="loadAll" :loading="loading">刷新</el-button>
     </div>
 
+    <!-- 导出：先全量渲染（占位页打印会空白），带进度条，渲染完再打印 -->
+    <el-dialog v-model="exportOpen" title="正在准备导出" width="420px" :close-on-click-modal="false" :show-close="false">
+      <div style="padding: 6px 0">
+        <el-progress :percentage="exportPct" :stroke-width="14" />
+        <p style="margin-top: 12px; color: #666; font-size: 13px">
+          正在全量渲染全書 {{ sheets.length }} 頁（已完成 {{ Math.min(renderCount, sheets.length) }} 頁），渲染完成並等待排版穩定後會自動調起打印。
+        </p>
+      </div>
+    </el-dialog>
+
     <div class="scroll" ref="scrollRef" v-loading="loading">
       <div class="pages">
         <!-- 離屏量測區：用真實 A3 版式量成員寬度、小傳寬度 -->
@@ -140,6 +150,7 @@
                :class="{ 'page-flash': highlightPageNo === sh.pageNo,
                  'sg-sheet': sh.kind === 'shrine' || sh.kind === 'grave',
                  'sg-plate-sheet': sh.kind === 'shrine' && sh.mode === 'image' }">
+          <template v-if="isSheetVisible(si)">
           <!-- 垂珠體頁 -->
           <div class="page" v-if="sh.kind === 'chart'" :style="{ zoom: zoomScale }">
             <div class="board"><div class="bin">
@@ -439,6 +450,8 @@
               </div>
             </div></div>
           </div>
+          </template>
+          <div v-else class="sheet-ph" :style="{ height: sheetH + 'px' }"><span>第 {{ sh.pageNo }} 页 · 滚动到此自动载入</span></div>
         </div>
 
         <!-- 牌記（版權頁）：全書末頁 —— 三行小字（堂號／修次／紀年）＋「X堂藏板」。
@@ -690,6 +703,64 @@ const fitPct = computed(() => Math.min(100, Math.max(20, Math.round(fitScale.val
 const autoPct = computed(() => Math.min(fitPct.value, rememberedPct.value))
 const effPct = computed(() => (explicitManual.value ? rememberedPct.value : autoPct.value))
 const zoomScale = computed(() => effPct.value / 100)
+// ===== 分页（渐进）渲染 =====
+// 整本 52 张一次挂载在 500 人时要 2 秒多；改成先渲染前几页（秒开），其余按批补齐，
+// 未渲染的页用等高的占位块撑着，滚动位置/页码/目录锚点都不变。
+const renderCount = ref(3)
+const sheetH = ref(1123)
+const exportOpen = ref(false)
+// ===== 真·卸载（校准完成后启用）=====
+// 首次仍要全量渲染一遍：传记容量校准要遍历每一张传记页的真实 DOM，少一页就可能把正文裁掉。
+// 校准一完成就切换到「只挂窗口内 3~5 页」，其余页卸载成等高占位块；此后滚动只增删少量页面，
+// 页数再多（100 页、200 页）滚动开销都一样。
+const lazyMode = ref(false)
+const winStart = ref(0)
+const winEnd = ref(8)
+function visiblePageCount() {
+  const h = sheetH.value || 1123
+  const vh = scrollRef.value ? scrollRef.value.clientHeight : 800
+  return Math.max(2, Math.ceil(vh / (h + 28)) )
+}
+function isSheetVisible(si) {
+  if (!lazyMode.value) return si < renderCount.value
+  return si >= winStart.value && si <= winEnd.value
+}
+function updateWindow() {
+  if (!lazyMode.value) return
+  const el = scrollRef.value
+  if (!el) return
+  const total = sheets.value.length
+  if (!total) return
+  const h = (sheetH.value || 1123) + 28
+  const firstSheet = document.querySelector('.sheet[data-page]')
+  const baseTop = firstSheet ? firstSheet.offsetTop : 0   // 书衣/内封/目录之后的起始位置
+  const idx = Math.max(0, Math.floor((el.scrollTop - baseTop) / h))
+  const cnt = visiblePageCount()
+  const s0 = Math.max(0, Math.min(total - 1, idx - 1))
+  const s1 = Math.min(total - 1, s0 + cnt + 1)
+  if (s0 !== winStart.value || s1 !== winEnd.value) {
+    winStart.value = s0
+    winEnd.value = s1
+  }
+}
+
+const exportPct = ref(0)
+async function renderAllPages() {
+  const total = sheets.value.length
+  if (!total) return
+  renderCount.value = Math.min(3, total)
+  await nextTick()
+  const firstSheet = document.querySelector('.sheet[data-page]')
+  if (firstSheet) {
+    const h = firstSheet.getBoundingClientRect().height
+    if (h > 100) sheetH.value = Math.round(h)
+  }
+  while (renderCount.value < total) {
+    renderCount.value = Math.min(total, renderCount.value + 6)
+    await nextTick()
+    await new Promise(r => requestAnimationFrame(r))
+  }
+}
 // 按鈕顯示使用者期望的百分比；實際渲染值另有提示
 const zoomLabel = computed(() => effPct.value + '%')
 // 手動值被「螢幕只夠這麼寬」壓回時給提示（屬主預期行為，非 bug）
@@ -1448,7 +1519,17 @@ function buildSheets() {
 
   sheets.value = model
   // 渲染後：先按真實 DOM 校正容量（首頁/續頁兩套），再實測溢出兜底收緊
-  nextTick(() => { calibrateBioCaps(); calibrateBioCells() })
+  nextTick(async () => {
+    await renderAllPages()
+    await calibrateBioCaps()
+    await calibrateBioCells()
+    // 校准（需要全量 DOM）结束后立刻切到「只挂窗口内页」，其余卸载
+    await nextTick()
+    lazyMode.value = true
+    winStart.value = 0
+    winEnd.value = 8
+    updateWindow()
+  })
 }
 
 // ===== 行傳固定格：渲染後以真實 DOM 校正「每格字數」 =====
@@ -1757,9 +1838,14 @@ async function saveXiuci() {
 // 本視圖的滾動容器是 .scroll（overflow:auto），不是 window → 對它做 scrollTo / 監聽
 const showTopBtn = ref(false)
 const TOP_SHOW_AT = 200
+let winRaf = 0
 function onScrollTopBtn() {
   const el = scrollRef.value
   showTopBtn.value = !!el && el.scrollTop > TOP_SHOW_AT
+  // 滚动时按 rAF 节流更新渲染窗口（lazy 模式下才生效）
+  if (lazyMode.value && !winRaf) {
+    winRaf = requestAnimationFrame(() => { winRaf = 0; updateWindow() })
+  }
 }
 function backToTop() {
   const el = scrollRef.value
@@ -1783,7 +1869,25 @@ function jumpToPage(pageNo) {
   // 平滑滚动可能耗时 1~2s：高亮保持 2.6s，确保滚动落位后仍能看到描边，再自动消失
   highlightTimer = setTimeout(() => { highlightPageNo.value = null }, 2600)
 }
-function exportPDF() {
+async function exportPDF() {
+  // 导出前必须全量渲染（占位页打印出来会是空白），并给用户一个进度条，避免看起来卡死
+  exportOpen.value = true
+  exportPct.value = 5
+  await nextTick()
+  const total = sheets.value.length || 1
+  while (renderCount.value < total) {
+    renderCount.value = Math.min(total, renderCount.value + 5)
+    exportPct.value = Math.min(90, Math.round((renderCount.value / total) * 90))
+    await nextTick()
+    await new Promise(r => setTimeout(r, 16))
+  }
+  exportPct.value = 95
+  await nextTick()
+  // 等图片/字体/竖排文本落位，再调打印
+  await new Promise(r => setTimeout(r, 1200))
+  exportPct.value = 100
+  await new Promise(r => setTimeout(r, 120))
+  exportOpen.value = false
   window.print()
 }
 
@@ -2157,4 +2261,10 @@ onBeforeUnmount(() => {
   .chuizhu .colo-sheet { display: block !important; width: auto !important; page-break-before: always; }
   /* 邊距與縮放由動態 <style id="chuizhu-print-page"> 注入（見 applyPrintStyle），不再寫死 */
 }
+</style>
+
+<style scoped>
+/* 未渲染页的等高占位块：撑住滚动高度，滚到附近自动换成真页 */
+.sheet-ph { display: flex; align-items: center; justify-content: center; width: 100%; background: #fff;
+  border: 1px dashed #d9cbb6; border-radius: 2px; color: #c0ae99; font-size: 14px; }
 </style>

@@ -26,7 +26,7 @@
          @dblclick="zoom = 1"
          @touchstart.passive="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <svg :width="width * zoom" :height="height * zoom" :viewBox="`0 0 ${width} ${height}`">
-        <g v-for="(n, i) in layout.nodes" :key="i">
+        <g v-for="(n, i) in visibleNodes" :key="n.id">
           <!-- 排行：竖排（行/一 各占一行），中文数字 -->
           <text v-for="(ch, ri) in n.rankChars" :key="'r' + ri" :x="n.x - 16" :y="n.top + 14 + ri * 15"
                 text-anchor="middle" font-size="12" fill="#8a7f6d">{{ ch }}</text>
@@ -51,7 +51,7 @@
         </g>
         <!-- 连线 -->
         <g>
-          <path v-for="(d, i) in layout.lines" :key="'l' + i" :d="d" fill="none" stroke="#6b6152" stroke-width="1.1" />
+          <path v-for="(d, i) in visibleLines" :key="'l' + i" :d="d" fill="none" stroke="#6b6152" stroke-width="1.1" />
         </g>
         <!-- 右侧世代标签（可开关） -->
         <g v-if="showGenLabel">
@@ -69,7 +69,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import api from '../api'
 import { memberKnown, lostContactText } from '../utils/memberFlags'
 import TextTreeBookPages from './TextTreeBookPages.vue'
@@ -117,6 +117,21 @@ function rankLabel(r) {
 
 // ===== 交互：滚轮缩放、双指捏合、拖拽平移、双击复位 =====
 const wrapRef = ref(null)
+// ===== 视野内渲染 =====
+// 500 人时整张 SVG 有 6 千多节点，一次挂载明显卡；只渲染「可视区 + 四周各留 400px」的节点和连线，
+// 滚动/缩放时 rAF 节流重算。SVG 的 width/height 仍是完整尺寸，滚动条长度不变。
+const view = reactive({ x: 0, y: 0, w: 1200, h: 800 })
+let viewRaf = 0
+function syncView() {
+  const el = wrapRef.value
+  if (!el) return
+  view.x = el.scrollLeft; view.y = el.scrollTop
+  view.w = el.clientWidth; view.h = el.clientHeight
+}
+function onCanvasScroll() {
+  if (viewRaf) return
+  viewRaf = requestAnimationFrame(() => { viewRaf = 0; syncView() })
+}
 function setZoomOf(nz, clientX, clientY) {
   const wrap = wrapRef.value
   const z = Math.min(3, Math.max(0.3, +nz.toFixed(2)))
@@ -361,6 +376,40 @@ const layout = computed(() => {
 const width = computed(() => layout.value.width)
 const height = computed(() => layout.value.height)
 
+// ===== 视野过滤 =====
+const MARGIN = 400
+const viewRect = computed(() => {
+  const z = zoom.value || 1
+  return {
+    x0: view.x / z - MARGIN, y0: view.y / z - MARGIN,
+    x1: (view.x + view.w) / z + MARGIN, y1: (view.y + view.h) / z + MARGIN,
+  }
+})
+const visibleNodes = computed(() => {
+  const r = viewRect.value
+  return layout.value.nodes.filter((n) => {
+    const w = 70 + (n.spouses ? n.spouses.length * 44 : 0)
+    const h = (n.chars ? n.chars.length : 1) * NAME_LH + 40
+    return n.x + w > r.x0 && n.x - w < r.x1 && n.top + h > r.y0 && n.top - 20 < r.y1
+  })
+})
+const visibleLines = computed(() => {
+  const r = viewRect.value
+  return layout.value.lines.filter((d) => {
+    const nums = String(d).match(/-?\d+(?:\.\d+)?/g)
+    if (!nums || nums.length < 4) return true
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      const x = +nums[i], y = +nums[i + 1]
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+    return maxX > r.x0 && minX < r.x1 && maxY > r.y0 && minY < r.y1
+  })
+})
+
 onMounted(async () => {
   try {
     const { data } = await api.get('/members/with-spouses')
@@ -368,6 +417,17 @@ onMounted(async () => {
   } catch (e) {
     members.value = []
   }
+  await nextTick()
+  syncView()
+  const el = wrapRef.value
+  if (el) el.addEventListener('scroll', onCanvasScroll, { passive: true })
+  window.addEventListener('resize', syncView)
+})
+onBeforeUnmount(() => {
+  const el = wrapRef.value
+  if (el) el.removeEventListener('scroll', onCanvasScroll)
+  window.removeEventListener('resize', syncView)
+  if (viewRaf) cancelAnimationFrame(viewRaf)
 })
 </script>
 

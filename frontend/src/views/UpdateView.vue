@@ -161,6 +161,27 @@
     <el-card class="section update-log">
       <template #header><span>版本更新日志</span></template>
       <el-collapse v-model="activeLogs">
+                                      <el-collapse-item name="logStable1314">
+            <template #title>
+              <span class="log-title">v1.3.14</span>
+              <span class="log-count">2026-11-07 发布</span>
+            </template>
+            <div class="log-entry">
+              <div class="log-entry-head">
+                <span class="log-ver">v1.3.14</span>
+                <span class="log-date">2026-11-07</span>
+              </div>
+              <div class="log-entry-body">
+                <p><b>性能优化：人多之后不再卡</b></p>
+                <p>· 成员管理：虚拟滚动，只渲染屏幕内的行，500 人也秒开；表格高度自适应窗口。</p>
+                <p>· 世系可视化 / 纯文字连线：只渲染视野内的节点，拖动、缩放照样跟手。</p>
+                <p>· 谱书（垂珠体）：预览只保留当前几页，其余卸载，页数再多也不卡；导出时显示进度条，全量渲染完再打印。</p>
+                <p><b>其它</b></p>
+                <p>· 界面组件文案改为中文（分页、空数据、日期面板）。</p>
+                <p>· 更新日志默认展开最新一条。</p>
+              </div>
+            </div>
+          </el-collapse-item>
                                       <el-collapse-item name="logStable1313">
             <template #title>
               <span class="log-title">v1.3.13</span>
@@ -184,7 +205,7 @@
                 <p>· 右下角「回到顶部／返回」加大到 52px 并左右对齐；</p>
                 <p>· 新增「漏人自检」：若有人没排进书页，页面顶部会用红字列出名字。</p>
                 <p><b>其它</b></p>
-                <p>· 更新日志默认展开最新一条。</p>
+                <p>· 更新日志默认展开最新一条（此前选择器写死成 button，而 Element Plus 的折叠头是 div，所以一直展开成 v1.3.9）。</p>
               </div>
             </div>
           </el-collapse-item>
@@ -1894,13 +1915,19 @@ import api from '../api'
 
 const currentVersion = ref('')
 // 更新日志折叠面板：默认展开「第一条」（即最新版本）。
-// 以前这里写死成 logStable139，版本一多就展开到旧版；改成挂载后自动取第一个折叠项的名字，永不再漂移。
-const activeLogs = ref(["logStable139"])
+// 默认展开「最新一条」日志：挂载后取第一个折叠项的 name。
+// ⚠️ 不能按 `button` 找——Element Plus 2.7 起折叠头是 `<div class="el-collapse-item__header" role="button">`，
+//    原来 `.el-collapse-item button` 选择器命中 0 个，就退回到写死的 logStable139（属主看到的一直是 v1.3.9 那条）。
+const activeLogs = ref([])
 onMounted(() => {
   nextTick(() => {
-    const btn = document.querySelector('.update-log .el-collapse-item button')
-    const m = (btn && btn.id || '').match(/el-collapse-head-(.+)$/)
-    if (m && m[1]) activeLogs.value = [m[1]]
+    // 折叠项的名字规则：logStable + 版本号去掉点（如 v1.3.13 → logStable1313）。
+    // 从「第一个条目的标题」推出来，这样以后加新日志不用再改这里，也不会再退回旧版。
+    const first = document.querySelector('.update-log .el-collapse-item')
+    const t = first && first.querySelector('.log-title')
+    const ver = String((t && t.textContent) || '').trim().replace(/^v/i, '')
+    const name = ver ? 'logStable' + ver.replace(/\./g, '') : ''
+    if (name) activeLogs.value = [name]
   })
 })
 const selectedFile = ref(null)
@@ -1970,7 +1997,7 @@ function compareVersion(a, b) {
 onMounted(async () => {
   try {
     const { data } = await api.get('/settings/version')
-    currentVersion.value = data.version || '1.3.13'
+    currentVersion.value = data.version || '1.3.14'
   } catch (e) { /* ignore */ }
   checkManifestUpdate() // 打开页面自动检查一次更新
 })

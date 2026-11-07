@@ -16,60 +16,24 @@
     </div>
 
     <div class="table-responsive">
-    <el-table :data="shownMembers" border stripe style="width: 100%">
-      <el-table-column label="头像" width="60">
-        <template #default="s">
-          <el-avatar v-if="s.row.portrait" :src="s.row.portrait" :size="36" shape="square" />
-          <el-avatar v-else :size="36" shape="square" :style="{ background: '#d9cbb6', color: '#8c5a3c', fontSize: '14px' }">
-            {{ (s.row.name || s.row.surname || '').charAt(0) }}
-          </el-avatar>
+    <!-- 虚拟滚动表格：只渲染「屏幕内 + 预加载」，其余行不挂在 DOM 上 -->
+    <div class="table-wrap" ref="tableWrapRef" :style="{ height: tableH + 'px' }">
+      <el-auto-resizer>
+        <template #default="{ width }">
+          <el-table-v2
+            :columns="memberColumns"
+            :data="shownMembers"
+            :width="width"
+            :height="tableH"
+            :row-height="52"
+            :header-height="46"
+            :row-class-name="rowClassName"
+            fixed />
         </template>
-      </el-table-column>
-      <el-table-column label="姓名" width="100">
-        <template #default="s">{{ s.row.name || (s.row.surname || '') + (s.row.given_name || '') }}</template>
-      </el-table-column>
-      <el-table-column prop="generation" label="世代" width="85">
-        <template #default="s">{{ genLabel2(s.row) }}</template>
-      </el-table-column>
-      <el-table-column prop="generation_word" label="字辈" width="70" />
-      <el-table-column prop="zi" label="字" width="80" />
-      <el-table-column prop="hao" label="号" width="80" />
-      <el-table-column label="房支" width="100">
-        <template #default="s">{{ branchName(s.row.branch_id) || s.row.branch || '—' }}</template>
-      </el-table-column>
-      <el-table-column label="性别" width="60">
-        <template #default="s">{{ s.row.gender === 1 ? '男' : '女' }}</template>
-      </el-table-column>
-      <el-table-column prop="clan_type" label="宗法" width="70" />
-      <el-table-column prop="record_type" label="类型" width="70" />
-      <el-table-column label="父母" width="140">
-        <template #default="s">
-          <span v-if="s.row.father_id" class="parent-link" @click="goMember(s.row.father_id)">父:{{ getMemberName(s.row.father_id) }}</span>
-          <span v-if="s.row.father_id && s.row.mother_id"> / </span>
-          <span v-if="s.row.mother_id" class="parent-link" @click="goMember(s.row.mother_id)">母:{{ getMemberName(s.row.mother_id) }}</span>
-          <span v-if="!s.row.father_id && !s.row.mother_id">—</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="birth_gregorian" label="生年" width="110" />
-      <el-table-column prop="death_gregorian" label="卒年" width="110">
-        <template #default="s">{{ s.row.death_gregorian || '在世' }}</template>
-      </el-table-column>
-      <el-table-column prop="native_place" label="籍贯" />
-      <el-table-column prop="current_place" label="现居地" />
-      <el-table-column label="操作" width="150" fixed="right" v-if="canEdit()">
-        <template #default="s">
-          <el-button size="small" @click="goMember(s.row.id)">详情</el-button>
-          <el-button size="small" type="primary" @click="openEdit(s.row)">编辑</el-button>
-          <el-button size="small" type="danger" @click="del(s.row)">删除</el-button>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="80" fixed="right" v-else>
-        <template #default="s">
-          <el-button size="small" @click="goMember(s.row.id)">详情</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+      </el-auto-resizer>
     </div>
+    </div>
+
 
     <el-dialog v-model="editVisible" :title="editForm.id ? '编辑成员' : '新增成员'" width="700px">
       <el-form :model="editForm" label-width="80px">
@@ -257,7 +221,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed, watch, nextTick, h, resolveComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
@@ -283,6 +247,66 @@ const shownMembers = computed(() => {
     m.name, m.zi, m.hao, m.generation_word, m.native_place, m.current_place, m.former_name
   ].some(v => String(v || '').includes(q)))
 })
+// ===== 虚拟表格的列定义 =====
+// 只渲染可视区 + 上下预加载的行（TableV2 内部按需挂载/卸载），500 人也不会一次渲染整张表。
+function rowClassName({ rowIndex }) { return rowIndex % 2 ? 'm-row m-row--stripe' : 'm-row' }
+function cellSpan(text, cls) { return h('span', { class: cls || 'c-ellipsis' }, text == null || text === '' ? '—' : String(text)) }
+const memberColumns = computed(() => {
+  const cols = [
+    { key: 'portrait', title: '头像', width: 64, align: 'center', cellRenderer: ({ rowData }) => h('div', { class: 'c-avatar' },
+      rowData.portrait
+        ? h(resolveComponent('el-avatar'), { src: rowData.portrait, size: 36, shape: 'square' })
+        : h(resolveComponent('el-avatar'), { size: 36, shape: 'square', style: 'background:#d9cbb6;color:#8c5a3c;font-size:14px' },
+            () => String(rowData.name || rowData.surname || '').charAt(0))) },
+    { key: 'name', title: '姓名', width: 110, cellRenderer: ({ rowData }) => h('span', { class: 'c-name', onClick: () => goMember(rowData.id) },
+      rowData.name || ((rowData.surname || '') + (rowData.given_name || ''))) },
+    { key: 'generation', title: '世代', width: 92, cellRenderer: ({ rowData }) => cellSpan(genLabel2(rowData)) },
+    { key: 'generation_word', title: '字辈', width: 76, cellRenderer: ({ rowData }) => cellSpan(rowData.generation_word) },
+    { key: 'zi', title: '字', width: 84, cellRenderer: ({ rowData }) => cellSpan(rowData.zi) },
+    { key: 'hao', title: '号', width: 84, cellRenderer: ({ rowData }) => cellSpan(rowData.hao) },
+    { key: 'branch', title: '房支', width: 108, cellRenderer: ({ rowData }) => cellSpan(branchName(rowData.branch_id) || rowData.branch) },
+    { key: 'gender', title: '性别', width: 64, align: 'center', cellRenderer: ({ rowData }) => cellSpan(rowData.gender === 1 ? '男' : '女') },
+    { key: 'clan_type', title: '宗法', width: 76, cellRenderer: ({ rowData }) => cellSpan(rowData.clan_type) },
+    { key: 'record_type', title: '类型', width: 76, cellRenderer: ({ rowData }) => cellSpan(rowData.record_type) },
+    { key: 'parents', title: '父母', width: 150, cellRenderer: ({ rowData }) => {
+        const parts = []
+        if (rowData.father_id) parts.push(h('span', { class: 'parent-link', onClick: () => goMember(rowData.father_id) }, '父:' + getMemberName(rowData.father_id)))
+        if (rowData.father_id && rowData.mother_id) parts.push(h('span', null, ' / '))
+        if (rowData.mother_id) parts.push(h('span', { class: 'parent-link', onClick: () => goMember(rowData.mother_id) }, '母:' + getMemberName(rowData.mother_id)))
+        return parts.length ? h('span', { class: 'c-parents' }, parts) : cellSpan('—')
+      } },
+    { key: 'birth_gregorian', title: '生年', width: 116, cellRenderer: ({ rowData }) => cellSpan(rowData.birth_gregorian) },
+    { key: 'death_gregorian', title: '卒年', width: 116, cellRenderer: ({ rowData }) => cellSpan(rowData.death_gregorian || '在世') },
+    { key: 'native_place', title: '籍贯', width: 130, cellRenderer: ({ rowData }) => cellSpan(rowData.native_place) },
+    { key: 'current_place', title: '现居地', width: 130, cellRenderer: ({ rowData }) => cellSpan(rowData.current_place) },
+  ]
+  if (canEdit()) {
+    cols.push({ key: 'ops', title: '操作', width: 176, fixed: 'right', align: 'center', cellRenderer: ({ rowData }) => h('div', { class: 'c-ops' }, [
+      h(resolveComponent('el-button'), { size: 'small', onClick: () => goMember(rowData.id) }, () => '详情'),
+      h(resolveComponent('el-button'), { size: 'small', type: 'primary', onClick: () => openEdit(rowData) }, () => '编辑'),
+      h(resolveComponent('el-button'), { size: 'small', type: 'danger', onClick: () => del(rowData) }, () => '删除'),
+    ]) })
+  } else {
+    cols.push({ key: 'ops', title: '操作', width: 90, fixed: 'right', align: 'center', cellRenderer: ({ rowData }) => h('div', { class: 'c-ops' },
+      h(resolveComponent('el-button'), { size: 'small', onClick: () => goMember(rowData.id) }, () => '详情')) })
+  }
+  return cols
+})
+
+// ===== 表格高度自适应 =====
+// 原来写死 calc(100vh - 250px)：页面顶部高度一变就不准，窗口矮时表底离屏幕底部差一大截。
+// 改成实测「表格容器顶边 → 视口底部」的距离，窗口/侧栏尺寸变化时重算。
+const tableWrapRef = ref(null)
+const tableH = ref(600)
+function fitTableHeight() {
+  const el = tableWrapRef.value
+  if (!el) return
+  const top = el.getBoundingClientRect().top
+  tableH.value = Math.max(320, Math.round(window.innerHeight - top - 16))
+}
+function onWinResize() { fitTableHeight() }
+let fitObserver = null
+
 function onBranchChange(v) { setCurrent(v == null ? 0 : v) }
 const acctPw = ref({ visible: false, name: '', password: '' })
 const branchFilter = ref(null)
@@ -462,6 +486,10 @@ function onDocClickForTip(e) {
 }
 onMounted(() => document.addEventListener('click', onDocClickForTip))
 onBeforeUnmount(() => document.removeEventListener('click', onDocClickForTip))
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onWinResize)
+  if (fitObserver) { fitObserver.disconnect(); fitObserver = null }
+})
 
 // 选父后拉他的配偶，作为「母」下拉的候选（并默认选正配）
 const fatherSpouseCache = ref({})
@@ -740,7 +768,15 @@ function onImported() {
   load()
 }
 
-onMounted(() => { loadBranches(); load() })
+onMounted(() => {
+  loadBranches(); load()
+  nextTick(fitTableHeight)
+  window.addEventListener('resize', onWinResize)
+  if (typeof ResizeObserver !== 'undefined' && tableWrapRef.value) {
+    fitObserver = new ResizeObserver(() => fitTableHeight())
+    fitObserver.observe(document.body)
+  }
+})
 </script>
 
 <style scoped>
@@ -772,4 +808,19 @@ onMounted(() => { loadBranches(); load() })
   user-select: none;
 }
 .adopt-q:hover { background: #f0ebe0; color: #6b6152; }
+</style>
+
+<style scoped>
+/* 虚拟表格：撑满可用高度，表头固定，单元格不换行 */
+.table-wrap { min-height: 320px; width: 100%; }
+.table-wrap :deep(.el-table-v2) { border: 1px solid var(--el-border-color-lighter); border-radius: 4px; }
+.table-wrap :deep(.el-table-v2__row) { border-bottom: 1px solid var(--el-border-color-lighter); }
+.table-wrap :deep(.m-row--stripe) { background: var(--el-fill-color-lighter); }
+.table-wrap :deep(.el-table-v2__header-row) { background: var(--el-fill-color-light); font-weight: 600; }
+.table-wrap :deep(.c-ellipsis) { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table-wrap :deep(.c-name) { cursor: pointer; color: var(--el-color-primary); }
+.table-wrap :deep(.c-name:hover) { text-decoration: underline; }
+.table-wrap :deep(.c-parents) { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table-wrap :deep(.c-ops) { display: flex; gap: 4px; justify-content: center; }
+.table-wrap :deep(.c-avatar) { display: flex; justify-content: center; }
 </style>

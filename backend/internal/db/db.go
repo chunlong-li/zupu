@@ -402,6 +402,16 @@ CREATE TABLE IF NOT EXISTS incense_offers (
 );
 CREATE INDEX IF NOT EXISTS idx_incense_offers_expires ON incense_offers (expires_at);
 
+-- 常用外键/排序索引：成员多到几百人后，缺索引会让树图、房支、谱书等查询退化为全表扫（2026-11-07）
+CREATE INDEX IF NOT EXISTS idx_members_father   ON members (father_id);
+CREATE INDEX IF NOT EXISTS idx_members_gen      ON members (generation, id);
+CREATE INDEX IF NOT EXISTS idx_members_branch   ON members (branch_id);
+CREATE INDEX IF NOT EXISTS idx_spouses_member   ON spouses (member_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_member ON attachments (member_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_spouse ON attachments (spouse_id);
+CREATE INDEX IF NOT EXISTS idx_member_bio_entries_member ON member_bio_entries (member_id, sort_order, id);
+CREATE INDEX IF NOT EXISTS idx_spouse_bio_entries_spouse ON spouse_bio_entries (spouse_id, sort_order, id);
+
 CREATE TABLE IF NOT EXISTS traditions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title VARCHAR(128) NOT NULL,
@@ -516,7 +526,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_max_tokens', '2048');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_timeout_sec', '180');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_path', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('biography_criteria', '');
-INSERT OR REPLACE INTO settings (key, value) VALUES ('version', '1.3.13');
+INSERT OR REPLACE INTO settings (key, value) VALUES ('version', '1.3.14');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('deployed_at', CAST(strftime('%s','now') AS TEXT));
 INSERT OR IGNORE INTO settings (key, value) VALUES ('account_enabled', '0');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('account_submitters', '[]');

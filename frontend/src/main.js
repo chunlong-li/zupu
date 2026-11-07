@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import App from './App.vue'
 import router from './router'
@@ -7,7 +8,8 @@ import api from './api'
 import './style.css'
 
 const app = createApp(App)
-app.use(ElementPlus)
+// 组件内置文案（分页「Total/Go to」、表格「暂无数据」、日期面板等）一律用中文
+app.use(ElementPlus, { locale: zhCn })
 app.use(router)
 
 // 本机（127.0.0.1）免登录：无 token 时先向后端确认身份 —— 后端对 loopback 请求会返回「族员」访客身份，

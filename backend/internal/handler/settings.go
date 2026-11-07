@@ -92,7 +92,7 @@ func (h *SettingsHandler) GetVersion(c *gin.Context) {
 	var val string
 	h.DB.QueryRow(`SELECT value FROM settings WHERE key = 'version'`).Scan(&val)
 	if val == "" {
-		val = "1.3.13"
+		val = "1.3.14"
 	}
 	var sinceStr string
 	h.DB.QueryRow(`SELECT value FROM settings WHERE key = 'deployed_at'`).Scan(&sinceStr)

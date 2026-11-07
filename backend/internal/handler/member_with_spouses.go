@@ -32,6 +32,26 @@ func (h *MemberHandler) ListWithSpouses(c *gin.Context) {
 	}
 	defer rows.Close()
 
+	// 配偶一次查全（按成员分组）：原先是每个成员执行一条 SQL，500 人就是 500 条，
+	// 在 520 人的库上实测这一项占了整个接口 3/4 的时间。
+	allSpouses := map[int64][]Spouse{}
+	if spRows, spErr := h.DB.Query(`SELECT id, member_id, surname, given_name, name, type, family,
+		birth_calendar, birth_gregorian, birth_lunar, birth_ganzhi, birth_era,
+		death_gregorian, death_lunar, death_ganzhi, death_era, COALESCE(occupation,''), COALESCE(education,''), COALESCE(biography,''), COALESCE(remark,''), COALESCE(portrait,''), COALESCE(phone,''), COALESCE(dna_haploid,''), COALESCE(dna_diploid,''), COALESCE(dna_mito,'')
+		FROM spouses ORDER BY member_id,
+		CASE type WHEN '正配' THEN 1 WHEN '继配' THEN 2 WHEN '侧室' THEN 3 ELSE 4 END, id`); spErr == nil {
+		for spRows.Next() {
+			var s Spouse
+			if spRows.Scan(&s.ID, &s.MemberID, &s.Surname, &s.GivenName, &s.Name, &s.Type, &s.Family,
+				&s.BirthCalendar, &s.BirthGregorian, &s.BirthLunar, &s.BirthGanzhi, &s.BirthEra,
+				&s.DeathGregorian, &s.DeathLunar, &s.DeathGanzhi, &s.DeathEra,
+				&s.Occupation, &s.Education, &s.Biography, &s.Remark, &s.Portrait, &s.Phone, &s.DNAHaploid, &s.DNADiploid, &s.DNAMito) == nil {
+				allSpouses[s.MemberID] = append(allSpouses[s.MemberID], s)
+			}
+		}
+		spRows.Close()
+	}
+
 	members := []MemberWithSpouseList{}
 	for rows.Next() {
 		var m Member
@@ -44,23 +64,10 @@ func (h *MemberHandler) ListWithSpouses(c *gin.Context) {
 			return
 		}
 
-		// 查询配偶
-		spRows, _ := h.DB.Query(`SELECT id, member_id, surname, given_name, name, type, family,
-			birth_calendar, birth_gregorian, birth_lunar, birth_ganzhi, birth_era,
-			death_gregorian, death_lunar, death_ganzhi, death_era, COALESCE(occupation,''), COALESCE(education,''), COALESCE(biography,''), COALESCE(remark,''), COALESCE(portrait,''), COALESCE(phone,''), COALESCE(dna_haploid,''), COALESCE(dna_diploid,''), COALESCE(dna_mito,'')
-			FROM spouses WHERE member_id = ? ORDER BY
-			CASE type WHEN '正配' THEN 1 WHEN '继配' THEN 2 WHEN '侧室' THEN 3 ELSE 4 END, id`, m.ID)
-		spouses := []Spouse{}
-		for spRows.Next() {
-			var s Spouse
-			spRows.Scan(&s.ID, &s.MemberID, &s.Surname, &s.GivenName, &s.Name, &s.Type, &s.Family,
-				&s.BirthCalendar, &s.BirthGregorian, &s.BirthLunar, &s.BirthGanzhi, &s.BirthEra,
-				&s.DeathGregorian, &s.DeathLunar, &s.DeathGanzhi, &s.DeathEra,
-				&s.Occupation, &s.Education, &s.Biography, &s.Remark, &s.Portrait, &s.Phone, &s.DNAHaploid, &s.DNADiploid, &s.DNAMito)
-			spouses = append(spouses, s)
+		spouses := allSpouses[m.ID]
+		if spouses == nil {
+			spouses = []Spouse{}
 		}
-		spRows.Close()
-
 		members = append(members, MemberWithSpouseList{Member: m, Spouses: spouses})
 	}
 

@@ -51,20 +51,20 @@
             <stop offset="55%" stop-color="#fdf1d2" />
             <stop offset="100%" stop-color="#eddfb6" />
           </linearGradient>
-          <clipPath v-for="n in nodes" :key="'clip'+(n._uid||n.id)" :id="'clip'+(n._uid||n.id)">
+          <clipPath v-for="n in visibleNodes" :key="'clip'+(n._uid||n.id)" :id="'clip'+(n._uid||n.id)">
             <rect :x="n.x - 30" :y="n.y" :width="60" :height="60" rx="8" />
           </clipPath>
-          <clipPath v-for="sn in allSpouseNodes" :key="'spclip'+sn.id" :id="'spclip'+sn.id">
+          <clipPath v-for="sn in visibleSpouseNodes" :key="'spclip'+sn.id" :id="'spclip'+sn.id">
             <rect :x="sn.x" :y="sn.y" :width="60" :height="60" rx="8" />
           </clipPath>
         </defs>
         <g :transform="`translate(${pan.x},${pan.y}) scale(${zoom})`">
           <!-- 连线 -->
-          <g v-for="(edge, i) in edges" :key="'e'+i">
+          <g v-for="(edge, i) in visibleEdges" :key="'e'+i">
             <path :d="edge.d" :stroke="edge.sep ? '#8c5a3c' : '#8c5a3c'" :stroke-width="edge.sep ? 1 : 1.5" :stroke-dasharray="edge.dashed ? '8,4' : 'none'" fill="none" :opacity="edge.sep ? 0.5 : 1" />
           </g>
           <!-- 节点 -->
-          <g v-for="n in nodes" :key="n._uid || n.id" class="node-group">
+          <g v-for="n in visibleNodes" :key="n._uid || n.id" class="node-group">
             <!-- 成员头像 -->
             <g class="node" @click="showMember(n)">
               <image v-if="n.portrait && portraitLoad !== 'off'" :href="portraitSrc(n.portrait)" :x="n.x - 30" :y="n.y" :width="60" :height="60" :clip-path="`url(#clip${n._uid||n.id})`" />
@@ -799,6 +799,56 @@ const edges = computed(() => {
     result.push({ d: `M${sepX1} ${waijiBoundaryY.value} L${sepX2} ${waijiBoundaryY.value}`, dashed: true, sep: true })
   }
   return result
+})
+
+// ===== 视野内渲染 =====
+// 500 人时整棵树 1 万多个 DOM 节点，一次挂载明显卡；只渲染「当前视野 + 四周各留 400px」的节点与连线。
+// pan/zoom 都是响应式的，拖动/缩放时自动重算；SVG 尺寸不变，缩放/拖动行为不变。
+const VIEW_MARGIN = 400
+const viewRect = computed(() => {
+  const z = zoom.value || 1
+  const w = svgW.value || 1200
+  const h = svgH.value || 800
+  return {
+    x0: (0 - pan.x) / z - VIEW_MARGIN, y0: (0 - pan.y) / z - VIEW_MARGIN,
+    x1: (w - pan.x) / z + VIEW_MARGIN, y1: (h - pan.y) / z + VIEW_MARGIN,
+  }
+})
+const visibleNodes = computed(() => {
+  const r = viewRect.value
+  return nodes.value.filter((n) => {
+    const uw = n.unitW || 200
+    return n.x + uw + 60 > r.x0 && n.x - 120 < r.x1 && n.y + NODE_H + 40 > r.y0 && n.y - 40 < r.y1
+  })
+})
+const visibleSpouseNodes = computed(() => {
+  const seen = new Set()
+  const out = []
+  visibleNodes.value.forEach((n) => {
+    (n.spouseNodes || []).forEach((sn) => {
+      if (seen.has(sn.id)) return
+      seen.add(sn.id)
+      out.push(sn)
+    })
+  })
+  return out
+})
+function pathHitsView(d, r) {
+  const nums = String(d).match(/-?\d+(?:\.\d+)?/g)
+  if (!nums || nums.length < 4) return true
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (let i = 0; i + 1 < nums.length; i += 2) {
+    const x = +nums[i], y = +nums[i + 1]
+    if (x < minX) minX = x
+    if (x > maxX) maxX = x
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+  }
+  return maxX > r.x0 && minX < r.x1 && maxY > r.y0 && minY < r.y1
+}
+const visibleEdges = computed(() => {
+  const r = viewRect.value
+  return edges.value.filter((e) => pathHitsView(e.d, r))
 })
 
 async function load() {
