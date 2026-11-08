@@ -66,7 +66,7 @@ func defaultWebDir() string {
 // Load 从环境变量加载配置
 func Load() *Config {
 	return &Config{
-		Port:        getEnv("FAMILY_TREE_PORT", "8080"),
+		Port:        getEnv("FAMILY_TREE_PORT", getEnv("PORT", "8080")), // 云托管会注入 PORT，优先用自己的变量
 		DataDir:     getEnv("FAMILY_TREE_DATA_DIR", defaultDataDir()),
 		AdminUser:   getEnv("FAMILY_TREE_ADMIN_USER", "admin"),
 		AdminPass:   getEnv("FAMILY_TREE_ADMIN_PASS", "admin123"),
