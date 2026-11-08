@@ -178,7 +178,7 @@ func (h *MemberHandler) Stats(c *gin.Context) {
 
 	var total, alive, male, female, spouseCount, spouseAlive int
 	h.DB.QueryRow(`SELECT COUNT(*) FROM members`+w, bargs...).Scan(&total)
-	h.DB.QueryRow(`SELECT COUNT(*) FROM members`+and("(death_gregorian = '' OR death_gregorian IS NULL)"), bargs...).Scan(&alive)
+	h.DB.QueryRow(`SELECT COUNT(*) FROM members`+and("(COALESCE(death_gregorian,'') = '' AND COALESCE(death_era,'') = '')"), bargs...).Scan(&alive)
 	h.DB.QueryRow(`SELECT COUNT(*) FROM members`+and("gender = 1"), bargs...).Scan(&male)
 	h.DB.QueryRow(`SELECT COUNT(*) FROM members`+and("gender = 2"), bargs...).Scan(&female)
 
@@ -187,9 +187,9 @@ func (h *MemberHandler) Stats(c *gin.Context) {
 	if bcond != "" {
 		sub := "member_id IN (SELECT id FROM members WHERE " + bcond + ")"
 		spW = " WHERE " + sub
-		spAliveW = " WHERE " + sub + " AND (death_gregorian = '' OR death_gregorian IS NULL)"
+		spAliveW = " WHERE " + sub + " AND (COALESCE(death_gregorian,'') = '' AND COALESCE(death_era,'') = '')"
 	} else {
-		spAliveW = " WHERE (death_gregorian = '' OR death_gregorian IS NULL)"
+		spAliveW = " WHERE COALESCE(death_gregorian,'') = '' AND COALESCE(death_era,'') = ''"
 	}
 	h.DB.QueryRow(`SELECT COUNT(*) FROM spouses`+spW, bargs...).Scan(&spouseCount)
 	h.DB.QueryRow(`SELECT COUNT(*) FROM spouses`+spAliveW, bargs...).Scan(&spouseAlive)

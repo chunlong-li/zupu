@@ -203,6 +203,13 @@ const scaleSel = computed({
 const boxes = ref([])
 const plan = ref(null)
 const working = ref(false)
+// 文件名里的姓氏要写成「李氏」，不能只写「李」（属主 2026-11-07 指出）
+function withShi(name) {
+  const n = String(name || '').trim()
+  if (!n || n.endsWith('氏')) return n
+  return n + '氏'
+}
+
 const familyName = ref('')
 const collecting = ref(false)
 
@@ -282,7 +289,7 @@ function buildMeta() {
     viewTitle: props.title,
     volume: props.volume,
     title: `${familyName.value || ''}${familyName.value ? ' · ' : ''}${props.title} 打印稿`,
-    filename: `${familyName.value || '族谱'}-${props.title}-${opts.paper}-${opts.orientation === 'portrait' ? '竖版' : '横版'}-${opts.mode}.pdf`,
+    filename: `${withShi(familyName.value) || '族谱'}-${props.title}-${opts.paper}-${opts.orientation === 'portrait' ? '竖版' : '横版'}-${opts.mode}.pdf`,
     bg: props.theme.bg || '#ffffff',
     ink: props.theme.ink || '#3a2a18'
   }

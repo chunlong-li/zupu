@@ -171,9 +171,24 @@ func (h *MemberIOHandler) Export(c *gin.Context) {
 		return
 	}
 
+	// 导出只带「人能改、改了导入能生效」的列：
+	// 干支 / 享年 / 子女数 / 创建时间 / 更新时间 都是系统按日期或关系自动算出来的（只读），
+	// 带出去只会在表里堆出「同一天好几种写法」，导入时也一律被忽略（2026-11-07 属主反馈）。
+	// 日期只导出「公历 + 年号」两种写法（属主 2026-11-07 定）；
+	// 享年特意保留（属主 2026-11-07：享年还是要的）。
+	// 历法、农历、干支、享年这些都是按公历自动推算/派生的，导出里列着只会让人分不清该改哪个。
+	skipOnExport := map[string]bool{
+		"birth_ganzhi": true, "death_ganzhi": true,
+		"birth_calendar": true, "birth_lunar": true, "death_lunar": true,
+		"children_count": true,
+		"created_at": true, "updated_at": true,
+	}
 	cols := make([]ioColumn, 0, len(ioCols))
 	for _, col := range ioCols {
 		if !ioColumnAllowed(col, role) {
+			continue
+		}
+		if skipOnExport[col.Key] {
 			continue
 		}
 		cols = append(cols, col)
@@ -206,8 +221,13 @@ func (h *MemberIOHandler) Export(c *gin.Context) {
 	// 家族姓氏（用于生成文件名）
 	familySurname := ""
 	_ = h.DB.QueryRow(`SELECT value FROM settings WHERE key='family_surname'`).Scan(&familySurname)
-	baseName := strings.TrimSpace(familySurname) + "族谱-成员档案"
-	if baseName == "族谱-成员档案" {
+	// 文件名用「李氏族谱」，不是「李族谱」；姓氏本身已带「氏」（如「李氏」）时不重复加
+	sur := strings.TrimSpace(familySurname)
+	if sur != "" && !strings.HasSuffix(sur, "氏") {
+		sur += "氏"
+	}
+	baseName := sur + "族谱-成员档案"
+	if sur == "" {
 		baseName = "成员档案"
 	}
 	stamp := time.Now().Format("20060102_1504")
@@ -655,6 +675,13 @@ type importRow struct {
 	Reasons []string
 	Warns   []string
 
+	DeathMark        bool   // 卒年填「已逝/殁/亡故…」：清空死亡日期
+	DeathMarkText    string // 原始写法（已逝/殁/亡故…），原样存进年号列
+	DeathOverwrite   bool   // 用户在确认框里勾了「覆盖原卒年」
+	DeathConflictOld string // 原记录有具体卒年、新值只是「已故」→ 记下原值，等用户勾选
+	BirthEraText     string // 出生日期列里填的是年号纪年（乾隆9年…）→ 同步进 birth_era
+	DeathEraText     string // 同上，对应 death_era
+
 	MemberID   int64
 	Name       string
 	Surname    string
@@ -759,10 +786,20 @@ func (h *MemberIOHandler) Preview(c *gin.Context) {
 	for _, r := range a.Rows {
 		views = append(views, r.view())
 	}
+	// 「原记录已有具体卒年，新值只是已故」的冲突列表：前端弹确认框，逐条勾选要不要覆盖
+	deathConflicts := []gin.H{}
+	for _, r := range a.Rows {
+		if r.DeathMark && r.DeathConflictOld != "" {
+			deathConflicts = append(deathConflicts, gin.H{
+				"row_no": r.RowNo, "member_id": r.MemberID, "name": r.Name, "old": r.DeathConflictOld, "new": "已故",
+			})
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"ok":        a.Invalid == 0,
-		"file_type": fileType,
-		"columns":   a.Columns,
+		"ok":              a.Invalid == 0,
+		"file_type":       fileType,
+		"columns":         a.Columns,
+		"death_conflicts": deathConflicts,
 		"stats": gin.H{
 			"total": a.Total, "valid": a.Valid, "invalid": a.Invalid,
 			"create": a.Create, "update": a.Update, "skip": a.Skip, "spouse_add": a.SpouseAdd,
@@ -972,6 +1009,8 @@ func (h *MemberIOHandler) analyzeTable(table [][]string, c *gin.Context) (*impor
 	if len(table) == 0 {
 		return nil, fmt.Errorf("文件里没有内容")
 	}
+	// 「已故覆盖原卒年」的勾选结果（仅 Import 时带；Preview 不带 → 一律按未勾选处理，只报冲突）
+	overwriteRows := parseRowNoSet(c.PostForm("death_overwrite"))
 	// 表头 = 第一个非空行
 	headerIdx := -1
 	for i, row := range table {
@@ -1198,6 +1237,7 @@ func (h *MemberIOHandler) analyzeTable(table [][]string, c *gin.Context) (*impor
 			continue
 		}
 		if r.Action == "update" {
+			r.DeathOverwrite = overwriteRows[r.RowNo]
 			if err := h.prepareUpdate(r); err != nil {
 				r.fail(err.Error())
 			}
@@ -1364,19 +1404,50 @@ func (h *MemberIOHandler) validateBasics(r *importRow, seenID map[int64]int) {
 		}
 	}
 
-	// 日期校验/规范化
+	// 日期校验/规范化。
+	// 关键：任何一列解析不了都只跳过该列（保持原值），绝不把整行判废——
+	// 否则「导出→改卒年→导入」时，只要该行出生日期是老格式（如「乾隆9年」），整行就被丢掉，改了也不生效。
 	for _, key := range []string{"birth_gregorian", "death_gregorian"} {
-		v := r.Raw[key]
+		v := strings.TrimSpace(r.Raw[key])
 		if v == "" {
+			continue
+		}
+		eraKey := "birth_era"
+		label := "出生日期(公历)"
+		if key == "death_gregorian" {
+			eraKey = "death_era"
+			label = "去世日期(公历)"
+		}
+		// 年号列直接填「已故/已逝/殁…」也算去世标记（属主会把年号列改成已故），同样清掉具体日期，
+		// 否则库里会出现「日期 + 已故」并存，列表显示日期、资料页显示卒年未詳，两处对不上。
+		if key == "death_gregorian" && isImportDeathMark(strings.TrimSpace(r.Raw[eraKey])) {
+			r.Raw[key] = ""
+			r.DeathMarkText = strings.TrimSpace(r.Raw[eraKey])
+			r.DeathMark = true
+			continue
+		}
+		// 已逝/已故/殁/亡故…：归一成「已故」写进年号列，日期列清空（导出时不再带具体日期）
+		if key == "death_gregorian" && isImportDeathMark(v) {
+			r.DeathMarkText = v
+			r.Raw[key] = ""
+			r.DeathMark = true
+			continue
+		}
+		// 年号纪年（乾隆9年 / 民国12年…）：原样保留在该列，不判非法、也不搬家。
+		// 不搬家是为了「导出→导入」幂等：库里本来就是这么存的，搬去 era 列会让几百行凭空变成「更新」。
+		if _, ok := parseImportEraDate(v); ok {
+			r.Raw[key] = v
+			if key == "birth_gregorian" {
+				r.BirthEraText = v
+			} else {
+				r.DeathEraText = v
+			}
 			continue
 		}
 		norm, ok := normalizeImportDate(v)
 		if !ok {
-			label := "出生日期(公历)"
-			if key == "death_gregorian" {
-				label = "去世日期(公历)"
-			}
-			r.fail(fmt.Sprintf("%s格式非法：%s（应为 YYYY-MM-DD 或 YYYY）", label, v))
+			r.Warns = append(r.Warns, fmt.Sprintf("%s无法识别（%s），该列保持原值，其它列照常导入", label, v))
+			r.Raw[key] = ""
 			continue
 		}
 		r.Raw[key] = norm
@@ -1414,6 +1485,54 @@ func (h *MemberIOHandler) validateBasics(r *importRow, seenID map[int64]int) {
 }
 
 // normalizeImportDate 接受 YYYY-MM-DD / YYYY/M/D / YYYY.M.D / YYYY年M月D日 / YYYY
+// 去世标记：与前端 utils/dateFormat.js 的 DEATH_MARKS 保持一致。
+// 导入时把这些词归一成「已故」（写进年号列、清空日期列），
+// 这样书页显示「卒年未详」、列表显示「已故」，不会被当成在世。
+var importDeathMarks = []string{"已逝", "已故", "逝世", "已卒", "殁", "病故", "亡故", "去世"}
+
+func firstNonEmptyStr(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// 解析「勾选了要覆盖的行号」列表（逗号/空格分隔），用于已故覆盖具体卒年的确认框
+func parseRowNoSet(s string) map[int]bool {
+	out := map[int]bool{}
+	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == '，' || r == ' ' || r == ';' || r == '；' }) {
+		if n, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && n > 0 {
+			out[n] = true
+		}
+	}
+	return out
+}
+
+func isImportDeathMark(s string) bool {
+	s = strings.TrimSpace(s)
+	for _, m := range importDeathMarks {
+		if s == m {
+			return true
+		}
+	}
+	return false
+}
+
+// 年号纪年：乾隆9年 / 康熙六十一年 / 民国12年 …… 原样作为纪年文本，进 birth_era / death_era
+var importEraPrefixes = []string{"康熙", "雍正", "乾隆", "嘉庆", "道光", "咸丰", "同治", "光绪", "宣统", "民国", "共和", "洪宪", "天命", "崇德", "顺治"}
+
+func parseImportEraDate(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	for _, e := range importEraPrefixes {
+		if strings.HasPrefix(s, e) {
+			return s, true
+		}
+	}
+	return "", false
+}
+
 func normalizeImportDate(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -1623,13 +1742,7 @@ func (h *MemberIOHandler) decideAction(r *importRow, all map[int64]*memberLite, 
 			r.fail(fmt.Sprintf("ID 不存在：%d", r.MemberID))
 			return "error"
 		}
-		// ID + 姓名必须一致（避免误改他人）
-		existing := liteByID(all, r.MemberID)
-		if r.Name != "" && existing.Name != r.Name {
-			r.fail(fmt.Sprintf("ID %d 对应成员是「%s」，与填写的姓名「%s」不一致（改名请用成员编辑）",
-				r.MemberID, existing.Name, r.Name))
-			return "error"
-		}
+		// ID 存在就以 ID 为准更新；姓名不同 = 改名（在 prepareUpdate 里提示），不影响本行导入
 		return "update"
 	}
 	// 姓名匹配
@@ -1803,6 +1916,12 @@ func (h *MemberIOHandler) prepareCreate(r *importRow) error {
 		m.GenerationWord = (&MemberHandler{DB: h.DB}).detectGenerationWord(m.GivenName, m.Branch, m.Generation)
 	}
 	m.fillLunarInfo()
+	if v := strings.TrimSpace(r.Raw["birth_era"]); v != "" {
+		m.BirthEra = v
+	}
+	if v := strings.TrimSpace(r.Raw["death_era"]); v != "" {
+		m.DeathEra = v
+	}
 
 	// 配偶
 	r.SpouseNames, r.SpouseTypes = parseSpouseRefs(r.Raw["spouse_name"], r.Raw["spouse_type"])
@@ -1821,9 +1940,33 @@ func (h *MemberIOHandler) prepareUpdate(r *importRow) error {
 		return fmt.Errorf("ID %d 不存在", r.MemberID)
 	}
 	old.DecryptSensitive(h.EncKey)
-	r.Name = old.Name
-	r.Surname = old.Surname
-	r.GivenName = old.GivenName
+	// 文件里提供了姓名就以文件为准（支持改名）；只有没填姓名时才沿用旧值
+	if strings.TrimSpace(r.Name) != "" || strings.TrimSpace(r.GivenName) != "" {
+		fam := ""
+		_ = h.DB.QueryRow(`SELECT value FROM settings WHERE key='family_surname'`).Scan(&fam)
+		fam = strings.TrimSpace(fam)
+		if strings.TrimSpace(r.GivenName) == "" && r.Name != "" {
+			if fam != "" && strings.HasPrefix(r.Name, fam) {
+				r.Surname, r.GivenName = fam, strings.TrimPrefix(r.Name, fam)
+			} else if r.Surname != "" && strings.HasPrefix(r.Name, r.Surname) {
+				r.GivenName = strings.TrimPrefix(r.Name, r.Surname)
+			} else {
+				r.GivenName = r.Name
+				if r.Surname == "" {
+					r.Surname = fam
+				}
+			}
+		}
+		if r.Surname == "" {
+			r.Surname = fam
+		}
+		r.Name = r.Surname + r.GivenName
+		if r.Name != old.Name {
+			r.Warns = append(r.Warns, fmt.Sprintf("改名：「%s」→「%s」", old.Name, r.Name))
+		}
+	} else {
+		r.Name, r.Surname, r.GivenName = old.Name, old.Surname, old.GivenName
+	}
 	r.BranchID = old.BranchID
 	r.BranchName = old.Branch
 	if r.Gender == 0 {
@@ -1935,11 +2078,54 @@ func (h *MemberIOHandler) prepareUpdate(r *importRow) error {
 		changes = append(changes, "生母")
 	}
 
+	// 日期列里填的是年号纪年（乾隆五十年…）：年号列也跟着改成它，否则会显示按旧日期反推出来的年号。
+	if r.BirthEraText != "" && old.BirthEra != r.BirthEraText {
+		old.BirthEra = r.BirthEraText
+		old.BirthLunar = ""
+		old.BirthGanzhi = ""
+		changes = append(changes, "出生年号")
+	}
+	if r.DeathEraText != "" && old.DeathEra != r.DeathEraText {
+		old.DeathEra = r.DeathEraText
+		old.DeathLunar = ""
+		old.DeathGanzhi = ""
+		changes = append(changes, "去世年号")
+	}
+
+	// 卒年填的是「已逝/殁/亡故…」：清掉死亡日期与反推字段，年号记「已故」。
+	// 必须放在 fillLunarInfo 之前，否则年号会被按旧日期反推覆盖（实测「已故」被改回「乾隆五十九」）。
+	if r.DeathMark {
+		// 原记录已有具体卒年（日期或农历）→ 这是「用已故覆盖具体日期」，必须由用户在确认框里逐条勾选
+		hasOldDate := strings.TrimSpace(old.DeathGregorian) != "" || strings.TrimSpace(old.DeathLunar) != ""
+		switch {
+		case hasOldDate && !r.DeathOverwrite:
+			// 没勾选：死亡字段一律不动，只把冲突记下来给前端弹框
+			r.DeathConflictOld = firstNonEmptyStr(old.DeathGregorian, old.DeathLunar, old.DeathEra)
+			r.Raw["death_era"] = ""
+		case old.DeathGregorian == "" && old.DeathEra == "已故":
+			// 已经是「已故」，无需再改
+		default:
+			old.DeathGregorian = ""
+			old.DeathLunar = ""
+			old.DeathGanzhi = ""
+			old.DeathEra = firstNonEmptyStr(r.DeathMarkText, "已故")
+			changes = append(changes, "已故")
+		}
+	}
+
 	old.Name = old.Surname + old.GivenName
 	if old.GenerationWord == "" {
 		old.GenerationWord = (&MemberHandler{DB: h.DB}).detectGenerationWord(old.GivenName, old.Branch, old.Generation)
 	}
 	old.fillLunarInfo()
+	// 年号以文件为准：fillLunarInfo 会按日期把年号反推覆盖，
+	// 导致「只改年号」的导入看起来成功了、实际被改回去（属主 2026-11-07 反馈）。
+	if v := strings.TrimSpace(r.Raw["birth_era"]); v != "" {
+		old.BirthEra = v
+	}
+	if v := strings.TrimSpace(r.Raw["death_era"]); v != "" {
+		old.DeathEra = v
+	}
 
 	// 配偶：只新增缺失的
 	if v := r.Raw["spouse_name"]; v != "" {
@@ -1956,6 +2142,27 @@ func (h *MemberIOHandler) prepareUpdate(r *importRow) error {
 			}
 		}
 	}
+
+	// 农历/干支是按公历反推出来的派生字段（表里也只读），
+	// 它们随日期换算略有出入时不该把这一行判成「有更新」，否则同一份文件反复导入永远显示要更新。
+	derived := map[string]bool{"出生农历": true, "去世农历": true, "出生干支": true, "去世干支": true}
+	// 年号也是按日期反推的，只有用户在本表里明确填了年号列/年号纪年，才算他的改动
+	if r.BirthEraText == "" && strings.TrimSpace(r.Raw["birth_era"]) == "" {
+		derived["出生年号"] = true
+	}
+	if r.DeathEraText == "" && strings.TrimSpace(r.Raw["death_era"]) == "" {
+		derived["去世年号"] = true
+	}
+	seen := map[string]bool{}
+	kept := changes[:0]
+	for _, c := range changes {
+		if derived[c] || seen[c] {
+			continue
+		}
+		seen[c] = true
+		kept = append(kept, c)
+	}
+	changes = kept
 
 	r.SpouseAdd = len(r.SpouseNames)
 	if len(changes) == 0 && len(r.SpouseNames) == 0 {

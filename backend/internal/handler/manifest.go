@@ -23,6 +23,9 @@ import (
 // 取代早期逆向飞牛分享 API 的方案（fshare.go 已移除）。
 
 const manifestTimeout = 30 * time.Second
+// 更新包下载单独算超时：清单只有几 KB（30s 足够），但更新包 10MB 起，
+// 手机网络/NAS 跨境链路下 30s 经常不够，会报「context deadline exceeded」（属主 2026-11-07 实测）。
+const downloadTimeout = 20 * time.Minute
 
 // manifestHTTPClient 构建更新源 HTTP 客户端（支持跳过 TLS 证书校验，适配自签名证书）
 func (h *UpdateHandler) manifestHTTPClient() *http.Client {
@@ -30,6 +33,16 @@ func (h *UpdateHandler) manifestHTTPClient() *http.Client {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: h.Cfg.UpdateInsecure}, // #nosec G402 -- 由 FAMILY_TREE_UPDATE_INSECURE 显式开启
 	}
 	return &http.Client{Timeout: manifestTimeout, Transport: tr}
+}
+
+// downloadHTTPClient 下载更新包专用：超时放宽到 20 分钟，避免大包在慢链路上被 30 秒掐断
+func (h *UpdateHandler) downloadHTTPClient() *http.Client {
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: h.Cfg.UpdateInsecure}, // #nosec G402 -- 同上
+		ResponseHeaderTimeout: 60 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+	}
+	return &http.Client{Timeout: downloadTimeout, Transport: tr}
 }
 
 // updateManifest latest.json 清单结构
@@ -361,7 +374,7 @@ func (h *UpdateHandler) UpdateFromManifest(c *gin.Context) {
 	// 后台执行更新，前端轮询进度（下载 % → 解压中 → 重启中）
 	task := newUpdateTask()
 	go func() {
-		client := h.manifestHTTPClient()
+		client := h.downloadHTTPClient()
 		// 下载（带进度）
 		if err := downloadFile(client, dlURL, dlPath, func(p int) {
 			setUpdateProgress(task, stageDownloading, p, fmt.Sprintf("正在下载 %d%%", p))

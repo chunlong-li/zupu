@@ -34,7 +34,7 @@ func (h *UpdateHandler) currentVersion() string {
 	var v string
 	h.DB.QueryRow(`SELECT value FROM settings WHERE key = 'version'`).Scan(&v)
 	if v == "" {
-		return "1.3.14"
+		return "1.3.15"
 	}
 	return v
 }
@@ -272,7 +272,7 @@ func (h *UpdateHandler) UpdateFromServer(c *gin.Context) {
 				}
 				dlURL = resolveManifestURL(sources[0], req.URL)
 			}
-			client := h.manifestHTTPClient()
+			client := h.downloadHTTPClient()
 			if err := downloadFile(client, dlURL, dlPath, func(p int) {
 				setUpdateProgress(task, stageDownloading, p, fmt.Sprintf("正在下载 %d%%", p))
 			}); err != nil {

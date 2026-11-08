@@ -161,6 +161,31 @@
     <el-card class="section update-log">
       <template #header><span>版本更新日志</span></template>
       <el-collapse v-model="activeLogs">
+                                      <el-collapse-item name="logStable1315">
+            <template #title>
+              <span class="log-title">v1.3.15</span>
+              <span class="log-count">2026-11-08 发布</span>
+            </template>
+            <div class="log-entry">
+              <div class="log-entry-head">
+                <span class="log-ver">v1.3.15</span>
+                <span class="log-date">2026-11-08</span>
+              </div>
+              <div class="log-entry-body">
+                <p><b>导入导出</b></p>
+                <p>· 导入时某一列格式不对，不再整行丢弃（原来一行出错就跳过，改的卒年也跟着不生效）；「乾隆9年」这类年号纪年也能识别。</p>
+                <p>· 支持改名：ID 对得上就按 ID 更新，姓名变了只提示，不再拦成失败。</p>
+                <p>· 只改「年号」也能生效（之前会被日期反推覆盖）。</p>
+                <p>· 导出精简：日期只保留公历和年号两列，另加享年；文件名改为「李氏族谱-成员档案」。</p>
+                <p><b>已故</b></p>
+                <p>· 卒年填「已逝 / 已故 / 殁 / 亡故」等，列表按填的词显示，资料页显示「卒年未詳」。</p>
+                <p>· 原来有具体卒年、这次改成已故的，导入时会弹确认框逐条勾选，默认全选，取消则不改。</p>
+                <p><b>其它</b></p>
+                <p>· 成员管理与成员资料页共用同一个编辑弹窗，补上「出生 / 卒年」。</p>
+                <p>· 数据看板「已故人数」统计修正；更新包下载超时从 30 秒放宽到 20 分钟（手机更新不再失败）。</p>
+              </div>
+            </div>
+          </el-collapse-item>
                                       <el-collapse-item name="logStable1314">
             <template #title>
               <span class="log-title">v1.3.14</span>
@@ -1997,7 +2022,7 @@ function compareVersion(a, b) {
 onMounted(async () => {
   try {
     const { data } = await api.get('/settings/version')
-    currentVersion.value = data.version || '1.3.14'
+    currentVersion.value = data.version || '1.3.15'
   } catch (e) { /* ignore */ }
   checkManifestUpdate() // 打开页面自动检查一次更新
 })

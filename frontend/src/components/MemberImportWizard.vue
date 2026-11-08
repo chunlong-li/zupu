@@ -225,6 +225,39 @@
       <el-button v-else type="primary" @click="finish">完成</el-button>
     </template>
   </el-dialog>
+  <!-- 已故 / 已逝 要覆盖原具体卒年：逐条确认，默认全选；取消 = 一条都不覆盖 -->
+  <el-dialog v-model="deathDialog" title="确认改为「已故」" width="640px" :close-on-click-modal="false"
+             append-to-body :show-close="false">
+    <p class="death-tip">
+      下列成员原记录已经有具体卒年，本次导入填的是「已故 / 已逝」这类写法。
+      勾选的会改成「已故」（原卒年会被清空，谱书显示「卒年未詳」）；不勾选的保持原卒年不变。
+    </p>
+    <el-table :data="deathConflicts" size="small" border max-height="320" style="width: 100%">
+      <el-table-column width="46" align="center">
+        <template #header>
+          <el-checkbox v-model="deathAllChecked" :indeterminate="deathChecked.length > 0 && deathChecked.length < deathConflicts.length" />
+        </template>
+        <template #default="{ row }">
+          <el-checkbox-group v-model="deathChecked">
+            <el-checkbox :value="row.row_no" />
+          </el-checkbox-group>
+        </template>
+      </el-table-column>
+      <el-table-column prop="name" label="姓名" width="120" />
+      <el-table-column label="原卒年" min-width="140">
+        <template #default="{ row }">{{ row.old || '—' }}</template>
+      </el-table-column>
+      <el-table-column label="改为" width="90">
+        <template #default="{ row }">{{ row.new || '已故' }}</template>
+      </el-table-column>
+    </el-table>
+    <div class="death-count">已勾选 {{ deathChecked.length }} / {{ deathConflicts.length }} 条</div>
+    <template #footer>
+      <el-button @click="cancelDeathDialog">取消（都不覆盖）</el-button>
+      <el-button type="primary" @click="confirmDeathDialog">确认</el-button>
+    </template>
+  </el-dialog>
+
 </template>
 
 <script setup>
@@ -266,6 +299,9 @@ function reset() {
   busy.value = false
   downloading.value = false
   rowFilter.value = 'all'
+  deathDialog.value = false
+  deathConflicts.value = []
+  deathChecked.value = []
   mode.value = 'abort'
 }
 
@@ -317,13 +353,46 @@ async function doPreview() {
   }
 }
 
+// 已故 / 已逝 覆盖具体卒年：必须逐条确认。默认全选，取消 = 一条都不覆盖。
+const deathDialog = ref(false)
+const deathConflicts = ref([])
+const deathChecked = ref([])
+const deathAllChecked = computed({
+  get: () => deathConflicts.value.length > 0 && deathChecked.value.length === deathConflicts.value.length,
+  set: (v) => { deathChecked.value = v ? deathConflicts.value.map((c) => c.row_no) : [] }
+})
+function openDeathDialog() {
+  deathConflicts.value = (preview.value && preview.value.death_conflicts) || []
+  deathChecked.value = deathConflicts.value.map((c) => c.row_no)
+  deathDialog.value = true
+}
+
 async function doImport() {
   if (!preview.value) return
   if (preview.value.stats.valid === 0) { ElMessage.warning('没有可导入的行'); return }
+  // 有「已故覆盖原卒年」的行 → 先弹确认框，勾选后再真正导入
+  const conflicts = (preview.value && preview.value.death_conflicts) || []
+  if (conflicts.length && !deathDialog.value) { openDeathDialog(); return }
+  await runImport(deathChecked.value)
+}
+
+// 确认框点「取消」→ 一条都不覆盖，照常导入其它改动
+async function cancelDeathDialog() {
+  deathDialog.value = false
+  await runImport([])
+}
+
+async function confirmDeathDialog() {
+  deathDialog.value = false
+  await runImport(deathChecked.value)
+}
+
+async function runImport(overwriteRows) {
   busy.value = true
   try {
     const fd = formData()
     fd.append('mode', mode.value)
+    if (overwriteRows && overwriteRows.length) fd.append('death_overwrite', overwriteRows.join(','))
     const { data } = await api.post('/members/import', fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300000
@@ -426,6 +495,8 @@ function finish() {
 .result-fail { margin-top: 12px; }
 .result-fail-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .all-ok { margin-top: 16px; color: #2e7d32; font-size: 14px; }
+.death-tip { margin: 0 0 12px; color: #555; font-size: 13px; line-height: 1.6; }
+.death-count { margin-top: 10px; color: #8c5a3c; font-size: 13px; }
 @media (max-width: 767px) {
   .stats-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

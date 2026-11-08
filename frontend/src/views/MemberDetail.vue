@@ -58,7 +58,7 @@
             <div class="info-item"><span class="label">功名/官职</span><span>{{ member.title || '—' }}</span></div>
             <div class="info-item"><span class="label">职业</span><span>{{ member.occupation || '—' }}</span></div>
             <div class="info-item"><span class="label">学历</span><span>{{ member.education || '—' }}</span></div>
-            <div class="info-item"><span class="label">生卒</span><span>{{ formatLifeDates(member) }}</span></div>
+            <div class="info-item"><span class="label">生卒</span><span>{{ lifeDatesText }}</span></div>
             <div class="info-item" v-if="member.lifespan"><span class="label">享年</span><span>{{ member.lifespan }} 岁</span></div>
             <div class="info-item" v-if="calcAges()"><span class="label">年龄</span><span>{{ calcAges() }}</span></div>
             <div class="info-item"><span class="label">葬地</span><span>{{ member.burial_place || '—' }}</span></div>
@@ -222,109 +222,14 @@
     </el-row>
 
     <!-- 编辑成员弹窗 -->
-    <el-dialog v-model="editVisible" :title="editForm.id ? '编辑成员' : '新增成员'" width="750px">
-      <el-form :model="editForm" label-width="90px">
-        <el-row :gutter="12">
-          <el-col :span="8"><el-form-item label="姓"><el-input v-model="editForm.surname" disabled /></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="名"><div class="hz-inline"><el-input v-model="editForm.given_name" placeholder="输入名" /><el-button size="small" text type="primary" @click="openHanzi('given_name')">生僻字</el-button></div></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="世代">
-            <template v-if="editForm.record_type === '外纪'">
-              <el-input :model-value="waijiGenLabel" disabled />
-            </template>
-            <el-input-number v-else v-model="editForm.generation" :min="1" />
-          </el-form-item></el-col>
-        </el-row>
-        <el-row :gutter="12">
-          <el-col :span="8"><el-form-item label="性别"><el-select v-model="editForm.gender"><el-option label="男" :value="1" /><el-option label="女" :value="2" /></el-select></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="字"><div class="hz-inline"><el-input v-model="editForm.zi" /><el-button size="small" text type="primary" @click="openHanzi('zi')">生僻字</el-button></div></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="号"><div class="hz-inline"><el-input v-model="editForm.hao" /><el-button size="small" text type="primary" @click="openHanzi('hao')">生僻字</el-button></div></el-form-item></el-col>
-        </el-row>
-        <el-row :gutter="12">
-          <el-col :span="8"><el-form-item label="排行"><el-input v-model="editForm.rank" placeholder="行三" /></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="字辈"><div class="hz-inline"><el-input v-model="editForm.generation_word" /><el-button size="small" text type="primary" @click="openHanzi('generation_word')">生僻字</el-button></div></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="房支"><el-select v-model="editForm.branch_id" clearable filterable placeholder="选择房支" style="width:100%"><el-option v-for="b in branches" :key="b.id" :label="b.name" :value="b.id" /></el-select></el-form-item></el-col>
-        </el-row>
-        <el-row :gutter="12">
-          <el-col :span="8"><el-form-item label="宗法"><el-select v-model="editForm.clan_type"><el-option v-for="t in clanTypes" :key="t" :label="t" :value="t" /></el-select></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="类型"><el-select v-model="editForm.record_type" @change="onRecordTypeChange"><el-option label="内纪" value="内纪" /><el-option label="外纪" value="外纪" /></el-select></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="出生"><el-row :gutter="4"><el-col :span="8"><el-select v-model="editForm.birth_calendar" size="small"><el-option label="公历" value="solar" /><el-option label="农历" value="lunar" /></el-select></el-col><el-col :span="16"><el-input v-model="editForm.birth_date" placeholder="1900-08-01" @blur="convertDate" /></el-col></el-row></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="卒年"><el-input v-model="editForm.death_gregorian" placeholder="留空=在世" /></el-form-item></el-col>
-        </el-row>
-        <el-form-item label="父母">
-          <div style="width:100%;display:flex;gap:8px;align-items:flex-start">
-            <el-tooltip :visible="adoptTipVisible" placement="top" effect="light" trigger="manual">
-              <template #content><div style="max-width:330px;line-height:1.75" v-html="adoptTipHtml"></div></template>
-              <span ref="adoptQRef" class="adopt-q" @click.stop="toggleAdoptTip">?</span>
-            </el-tooltip>
-            <div style="flex:1">
-              <!-- 生父 / 生母 -->
-              <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
-                <el-select :model-value="'生父'" disabled style="width:90px"><el-option label="生父" value="生父" /></el-select>
-                <el-select v-model="editForm.father_id" filterable clearable placeholder="生父（本族）" style="width:160px" @change="onFatherChange">
-                  <el-option v-for="m in fatherCandidates" :key="'f'+m.id" :label="`${m.name || (m.surname||'')+(m.given_name||'')}（${genLabel(m)}）`" :value="m.id" />
-                </el-select>
-                <el-select v-if="editForm.record_type !== '外纪'" v-model="editForm.mother_spouse_id" filterable clearable placeholder="生母" style="width:160px" @focus="loadEditMotherCandidates">
-                  <el-option v-for="m in editMotherCandidates" :key="'sp'+m.id" :label="`${m.name}（${m.type}）`" :value="m.id" />
-                </el-select>
-                <el-input v-if="!editForm.father_id" v-model="editForm.birth_father_text" placeholder="生父在谱外：姓名" style="width:180px" />
-              </div>
-              <!-- 嗣父 / 养父（各带母） -->
-              <div v-for="(a, i) in editForm.adoptions" :key="'ad'+i" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
-                <el-select v-model="a.kind" style="width:90px" @change="syncClanTypeByAdoption">
-                  <el-option label="嗣父" value="嗣父" />
-                  <el-option label="养父" value="养父" />
-                </el-select>
-                <el-select v-model="a.father_id" filterable clearable placeholder="父（本族）" style="width:160px" @change="onAdoptFatherChange(a)">
-                  <el-option v-for="m in fatherCandidates" :key="'af'+m.id" :label="`${m.name || (m.surname||'')+(m.given_name||'')}（${genLabel(m)}）`" :value="m.id" />
-                </el-select>
-                <el-select v-model="a.mother_id" filterable clearable placeholder="母（本族）" style="width:160px">
-                  <el-option v-for="m in (fatherSpouseCache[a.father_id] || [])" :key="'am'+m.id" :label="`${m.name}（${m.type}）`" :value="m.id" />
-                </el-select>
-                <el-button text type="danger" @click="removeAdoption(i)">删除</el-button>
-              </div>
-              <div>
-                <el-button size="small" @click="addAdoption">+ 添加父母</el-button>
-              </div>
-            </div>
-          </div>
-        </el-form-item>
-        <el-row :gutter="12" v-if="editForm.record_type === '外纪'">
-          <el-col :span="12">
-            <el-form-item label="儿子"><el-select v-model="editForm.son_id" filterable clearable placeholder="选择儿子（关键）" style="width:100%" @change="onSonChange"><el-option v-for="m in sonCandidates" :key="m.id" :label="`${m.name || (m.surname||'')+(m.given_name||'')}（${genLabel(m)}）`" :value="m.id" /></el-select>
-              <div v-if="editForm.son_id" style="margin-top:4px;color:#909399;font-size:12px">{{ sonPositionText }}</div></el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="12">
-          <el-col :span="12"><el-form-item label="籍贯"><el-input v-model="editForm.native_place" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="现居地"><el-input v-model="editForm.current_place" placeholder="如：浙江省杭州市西湖区" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="手机"><el-input v-model="editForm.phone" placeholder="手机号码" /></el-form-item></el-col>
-        </el-row>
-        <el-row :gutter="12" v-if="canViewDNA()">
-          <el-col :span="24"><el-form-item label="单倍体"><el-input v-model="editForm.dna_haploid" placeholder="单倍体DNA编码" /></el-form-item></el-col>
-        </el-row>
-        <el-row :gutter="12" v-if="canViewDNA()">
-          <el-col :span="24"><el-form-item label="二倍体（STR）"><el-input v-model="editForm.dna_diploid" type="textarea" :rows="3" placeholder="粘贴 STR 位点串：位点名/数1/数2，用 - 分隔（如 D8S1179/12/14-D21S11/29/31-…）" /></el-form-item></el-col>
-        </el-row>
-        <el-row :gutter="12" v-if="canViewDNA()">
-          <el-col :span="24"><el-form-item label="线粒体"><el-input v-model="editForm.dna_mito" placeholder="线粒体DNA编码" /></el-form-item></el-col>
-        </el-row>
-        <el-row :gutter="12">
-          <el-col :span="12"><el-form-item label="职业"><el-input v-model="editForm.occupation" placeholder="如：教师 / 医生" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="学历"><el-input v-model="editForm.education" placeholder="如：本科 / 举人" /></el-form-item></el-col>
-        </el-row>
-        <el-row :gutter="12">
-          <el-col :span="12"><el-form-item label="功名/官职"><el-input v-model="editForm.title" /></el-form-item></el-col>
-        </el-row>
-        <el-row :gutter="12">
-          <el-col :span="12"><el-form-item label="出嫁信息"><el-input v-model="editForm.married_out" placeholder="适 XXX" /></el-form-item></el-col>
-        </el-row>
-        <el-form-item label="葬地"><el-input v-model="editForm.burial_place" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="editVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveMember">保存</el-button>
-      </template>
-    </el-dialog>
+    <!-- 编辑/新增成员：与成员管理列表共用同一个弹窗组件（MemberEditDialog） -->
+    <MemberEditDialog
+      v-model="editVisible"
+      :member="member"
+      :members="allMembers"
+      :branches="branches"
+      :family-surname="familySurname"
+      @saved="load" />
 
     <!-- 生僻字查字面板 -->
     <HanziPicker v-model="hanziVisible" @pick="onHanziPick" />
@@ -578,11 +483,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 import { aiValidateSave, confirmSaveProblems, buildMemberText, buildSpouseText, localMemberProblems, localSpouseProblems, mergeProblems } from '../utils/aiCheck'
 import { canEdit, canUseAI, canRollback, canViewDNA } from '../utils/auth'
-import { formatLifeDates, normalizeDeathFields } from '../utils/dateFormat'
+import { formatLifeDates, normalizeDeathFields, isDeathMark } from '../utils/dateFormat'
 import { SOURCE_KINDS } from '../utils/memberSources'
 import AvatarCropper from '../components/AvatarCropper.vue'
 import HanziPicker from '../components/HanziPicker.vue'
 import AccountPwDialog from '../components/AccountPwDialog.vue'
+import MemberEditDialog from '../components/MemberEditDialog.vue'
 
 const buildId = __BUILD_ID__ || 'dev'
 const acctPw = ref({ visible: false, name: '', password: '' })
@@ -691,6 +597,17 @@ const isVideo = (a) => a.category === '视频'
 const isAudio = (a) => a.category === '音频'
 const isPhoto = (a) => !isVideo(a) && !isAudio(a)
 const familySurname = ref('')
+// 资料页生卒一行：已故但无具体卒年时，明确写「已故（卒年未詳）」，
+// 不能只显示「卒年未詳」——列表里写着「已故」，这里却看不出来，属主会以为没生效。
+const lifeDatesText = computed(() => {
+  const m = member || {}
+  const txt = formatLifeDates(m)
+  if (isDeathMark(m.death_era) && !String(m.death_gregorian || '').trim()) {
+    return txt.replace('卒年未詳', `${String(m.death_era).trim()}（卒年未詳）`)
+  }
+  return txt
+})
+
 const editVisible = ref(false)
 const editForm = reactive({})
 
@@ -1078,25 +995,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClickForTip))
 
 
 function openEdit() {
-  const copy = JSON.parse(JSON.stringify(member))
-  // 先清空：birth_date 是纯 UI 字段（接口不返回），不清会把上一个成员的出生日期带进来
-  Object.keys(editForm).forEach(k => delete editForm[k])
-  Object.assign(editForm, copy)
-  originalBranchId.value = member.branch_id || 0
-  if (!editForm.surname) editForm.surname = familySurname.value
-  // 初始化出生日期字段（只用本成员自己的生年）
-  editForm.birth_calendar = editForm.birth_calendar || 'solar'
-  editForm.birth_date = editForm.birth_gregorian || ''
-  // 过继/收养关系（嗣父/养父，可多条）
-  editForm.adoptions = JSON.parse(JSON.stringify(member.adoptions || []))
-  // 0 不是有效 id：转成 null，选择框才会显示灰色「父 / 母」占位
-  editForm.father_id = editForm.father_id || null
-  editForm.mother_id = editForm.mother_id || null
-  editForm.mother_spouse_id = editForm.mother_spouse_id || null
-  editForm.adoptions.forEach(a => { a.father_id = a.father_id || null; a.mother_id = a.mother_id || null })
+  // 内容初始化在公共组件里做（它监听 modelValue）
   editVisible.value = true
-  // 预加载编辑时的生母候选人
-  loadEditMotherCandidates()
 }
 
 async function loadEditMotherCandidates() {
@@ -1590,7 +1490,16 @@ async function deleteSource(id) {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  // 从成员管理点「编辑」跳过来：直接把编辑弹窗打开（sessionStorage 传意图，路由守卫吃不掉）
+  let want = ''
+  try { want = sessionStorage.getItem('zupu_open_edit') || '' } catch (e) { /* ignore */ }
+  if (want && String(memberId) === want) {
+    try { sessionStorage.removeItem('zupu_open_edit') } catch (e) { /* ignore */ }
+    openEdit()
+  }
+})
 </script>
 
 <style scoped>
