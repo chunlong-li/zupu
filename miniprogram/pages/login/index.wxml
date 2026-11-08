@@ -1,6 +1,0 @@
-<view class="card" style="margin-top: 120rpx">
-  <view class="title" style="text-align:center;margin-bottom:40rpx">{{familySurname || '李氏'}}族谱</view>
-  <view class="row"><text class="label">账号</text><input class="value" placeholder="用户名" data-k="username" bindinput="onInput" /></view>
-  <view class="row"><text class="label">密码</text><input class="value" password placeholder="密码" data-k="password" bindinput="onInput" /></view>
-  <button class="btn" style="margin-top:32rpx" loading="{{loading}}" bindtap="doLogin">登录</button>
-</view>
