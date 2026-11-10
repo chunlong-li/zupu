@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item android:id="@+id/nav_members" android:title="👥 成员管理" />
+    <item android:id="@+id/nav_branches" android:title="🏡 房支管理" />
+
+    <item android:title="📊 数据看板">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item android:id="@+id/nav_dashboard" android:title="📈 数据看板" />
+                <item android:id="@+id/nav_birthday" android:title="🎂 生日" />
+                <item android:id="@+id/nav_deathday" android:title="🕯️ 祭日" />
+                <item android:id="@+id/nav_traditions" android:title="🎏 传统日程" />
+                <item android:id="@+id/nav_heatmap" android:title="🗺️ 热力分布" />
+                <item android:id="@+id/nav_migrations" android:title="🚶 迁徙记录" />
+                <item android:id="@+id/nav_contacts" android:title="📇 通讯录" />
+            </group>
+        </menu>
+    </item>
+
+    <item android:title="🌳 世系可视化">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item android:id="@+id/nav_tree" android:title="🏯 宝塔式" />
+                <item android:id="@+id/nav_texttree" android:title="📜 纯文字连线" />
+                <item android:id="@+id/nav_sutree" android:title="🎐 苏式垂吊图" />
+                <item android:id="@+id/nav_susi" android:title="🕸️ 苏式垂丝图" />
+                <item android:id="@+id/nav_suzhu" android:title="📿 苏氏垂珠体" />
+                <item android:id="@+id/nav_gentree" android:title="🪜 世代分层图" />
+                <item android:id="@+id/nav_dieji" android:title="📃 竖排牒记式" />
+                <item android:id="@+id/nav_dieji_land" android:title="📄 横版牒记式" />
+                <item android:id="@+id/nav_cover" android:title="📕 谱书封面" />
+                <item android:id="@+id/nav_chuandai" android:title="🌲 传代树" />
+            </group>
+        </menu>
+    </item>
+
+    <item android:title="🏛️ 谱头文化">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item android:id="@+id/nav_events" android:title="🗓️ 家族大事记" />
+                <item android:id="@+id/nav_articles" android:title="✒️ 谱序" />
+                <item android:id="@+id/nav_bios" android:title="👤 名人传记" />
+            </group>
+        </menu>
+    </item>
+
+    <item android:title="🏮 祠墓">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item android:id="@+id/nav_hall" android:title="🛕 祠堂" />
+                <item android:id="@+id/nav_shrines" android:title="🏯 祠宇志" />
+                <item android:id="@+id/nav_graves" android:title="🪦 茔墓志" />
+            </group>
+        </menu>
+    </item>
+
+    <item android:title="更多">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item android:id="@+id/nav_generation" android:title="📜 字辈派语" />
+                <item android:id="@+id/nav_spouses" android:title="💍 配偶资料" />
+                <item android:id="@+id/nav_knowledge" android:title="📚 家族知识库" />
+                <item android:id="@+id/nav_accounts" android:title="💰 收支公示" />
+                <item android:id="@+id/nav_merit" android:title="🪦 功德碑" />
+            </group>
+        </menu>
+    </item>
+
+    <item android:title="⚙️ 系统设置">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item android:id="@+id/nav_settings" android:title="🏷️ 家族设置" />
+                <item android:id="@+id/nav_datacheck" android:title="🩺 数据体检" />
+                <item android:id="@+id/nav_backup" android:title="💾 备份管理" />
+                <item android:id="@+id/nav_update" android:title="⬆️ 版本更新" />
+                <item android:id="@+id/nav_appupdate" android:title="📱 App 更新" />
+                <item android:id="@+id/nav_guide" android:title="📖 使用说明" />
+            </group>
+        </menu>
+    </item>
+</menu>

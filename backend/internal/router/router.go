@@ -2,6 +2,7 @@ package router
 
 import (
 	"database/sql"
+	"familytree/internal/discovery"
 	"log"
 	"net/http"
 	"os"
@@ -18,6 +19,8 @@ import (
 // Setup 初始化路由
 func Setup(cfg *config.Config, db *sql.DB, scheduler *backup.Scheduler) *gin.Engine {
 	r := gin.Default()
+	// 从真实请求头学习「对外端口」（容器不知道宿主机映射，但请求里带着），供局域网广播发现回报
+	r.Use(func(c *gin.Context) { discovery.ObserveRequest(c.Request) })
 	// 在线更新包可能较大，放宽 multipart 内存缓存到 512MB（超过则落临时文件）
 	r.MaxMultipartMemory = 512 << 20
 

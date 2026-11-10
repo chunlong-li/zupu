@@ -1,6 +1,7 @@
 package main
 
 import (
+	"familytree/internal/discovery"
 	"fmt"
 	"io"
 	"log"
@@ -83,6 +84,11 @@ func main() {
 	addr := ":" + cfg.Port
 	var ver string
 	database.QueryRow(`SELECT value FROM settings WHERE key = 'version'`).Scan(&ver)
+	// 局域网广播发现（手机 App 自动找服务用；FAMILY_TREE_DISCOVERY=0 可关）
+	if discovery.Enabled() {
+		p, _ := strconv.Atoi(cfg.Port)
+		discovery.Start(p, ver)
+	}
 	log.Printf("族谱系统 v%s 已启动，监听 %s", ver, addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("服务启动失败: %v", err)

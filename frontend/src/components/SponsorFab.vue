@@ -41,15 +41,27 @@ const visible = ref(false)
 const tab = ref('reward')
 let autoTimer = null
 
-// 每个浏览器首次进入主界面自动弹一次；谱书路由不会挂载本组件
-onMounted(() => {
+// 每个账号（浏览器内）首次进入主界面自动弹一次；谱书路由不会挂载本组件。
+// 2026-11-10：从「每个浏览器一次」改成「每个账号一次」——多账号共用一个浏览器时互不影响。
+function sponsorKey() {
   try {
-    if (localStorage.getItem('zupu_sponsor_shown') === '1') return
+    const u = JSON.parse(localStorage.getItem('user') || 'null')
+    const id = u && Number(u.id) > 0 ? Number(u.id) : 0
+    return id ? `zupu_sponsor_shown:u${id}` : 'zupu_sponsor_shown'
+  } catch (e) {
+    return 'zupu_sponsor_shown'
+  }
+}
+
+onMounted(() => {
+  const key = sponsorKey()
+  try {
+    if (localStorage.getItem(key) === '1') return
   } catch (e) {
     return // 隐私模式/localStorage 不可用：不弹，不报错
   }
   autoTimer = setTimeout(() => {
-    try { localStorage.setItem('zupu_sponsor_shown', '1') } catch (e) { /* ignore */ }
+    try { localStorage.setItem(key, '1') } catch (e) { /* ignore */ }
     visible.value = true
   }, 800)
 })

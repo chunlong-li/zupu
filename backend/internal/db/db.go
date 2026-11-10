@@ -516,7 +516,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_max_tokens', '2048');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_timeout_sec', '180');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_path', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('biography_criteria', '');
-INSERT OR REPLACE INTO settings (key, value) VALUES ('version', '1.3.15');
+INSERT OR REPLACE INTO settings (key, value) VALUES ('version', '1.3.15.1110.2');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('deployed_at', CAST(strftime('%s','now') AS TEXT));
 INSERT OR IGNORE INTO settings (key, value) VALUES ('account_enabled', '0');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('account_submitters', '[]');

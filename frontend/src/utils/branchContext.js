@@ -267,3 +267,18 @@ export function branchParams() {
   }
   return p
 }
+
+// 供 App（WebView）调用：外部切换房支，不刷新页面即可让各页面跟着变。
+// 只在 window 上挂一个函数，网页自身逻辑完全不变；老版本 App 仍可用「写 localStorage + 刷新」兜底。
+if (typeof window !== 'undefined') {
+  window.__zupuSetBranch = function (id, includeChildren) {
+    setCurrent(Number(id) || 0)
+    if (typeof includeChildren === 'boolean') setIncludeChildren(includeChildren)
+    branchCtx.picked = true
+    persist()
+    return branchCtx.current
+  }
+  window.__zupuBranchState = function () {
+    return { current: branchCtx.current, includeChildren: branchCtx.includeChildren, loaded: branchCtx.loaded }
+  }
+}

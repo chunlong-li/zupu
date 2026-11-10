@@ -130,3 +130,8 @@ router.beforeEach(async (to, from, next) => {
 })
 
 export default router
+
+// 供 App（WebView）等外部容器做原生菜单跳转，不重载页面
+if (typeof window !== 'undefined') {
+  window.__zupuRouter = router
+}

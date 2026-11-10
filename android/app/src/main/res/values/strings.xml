@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">族谱</string>
+    <string name="hint_address">服务器地址，如 192.168.1.190:8080</string>
+    <string name="hint_user">账号</string>
+    <string name="hint_pass">密码</string>
+    <string name="remember">记住密码</string>
+    <string name="login">登录</string>
+    <string name="discover">发现局域网内设备</string>
+    <string name="discovering">正在搜索局域网…</string>
+    <string name="discover_empty">没找到族谱服务，请确认手机和服务器在同一局域网</string>
+    <string name="menu_home">返回首页</string>
+    <string name="menu_refresh">刷新</string>
+    <string name="menu_browser">用浏览器打开</string>
+    <string name="menu_logout">退出</string>
+    <string name="logout_confirm">确定退出登录？</string>
+    <string name="logout_title">退出登录</string>
+    <string name="cancel">取消</string>
+    <string name="menu">菜单</string>
+    <string name="all_books">宗谱（全部）</string>
+</resources>
