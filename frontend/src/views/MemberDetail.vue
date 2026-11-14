@@ -225,7 +225,7 @@
     <!-- 编辑/新增成员：与成员管理列表共用同一个弹窗组件（MemberEditDialog） -->
     <MemberEditDialog
       v-model="editVisible"
-      :member="member"
+      :member="editingNew ? editForm : member"
       :members="allMembers"
       :branches="branches"
       :family-surname="familySurname"
@@ -609,6 +609,7 @@ const lifeDatesText = computed(() => {
 })
 
 const editVisible = ref(false)
+const editingNew = ref(false)   // true=新增/添加子女，弹窗用 editForm；false=编辑当前成员
 const editForm = reactive({})
 
 // 生僻字查字面板
@@ -995,7 +996,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClickForTip))
 
 
 function openEdit() {
-  // 内容初始化在公共组件里做（它监听 modelValue）
+  // 编辑「当前成员」：弹窗用 member 对象
+  editingNew.value = false
   editVisible.value = true
 }
 
@@ -1115,6 +1117,7 @@ async function convertDate() {
 }
 
 function openAddChild() {
+  editingNew.value = true
   // 使用与编辑/新增成员相同的弹窗，预填父亲为当前成员
   const autoMotherId = motherSpouseCandidates.value.length > 0 ? motherSpouseCandidates.value[0].id : 0
   Object.assign(editForm, {

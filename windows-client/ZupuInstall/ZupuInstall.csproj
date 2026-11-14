@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ZupuInstall</AssemblyName>
+    <RootNamespace>ZupuInstall</RootNamespace>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- 裁剪默认禁用内建 COM，建快捷方式需要它 -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <DebugType>none</DebugType>
+    <ApplicationIcon>..\windows-client\app.ico</ApplicationIcon>
+    <Version>1.2.0</Version>
+    <InformationalVersion>1.2.0.1113.6</InformationalVersion>
+    <Company>族谱系统</Company>
+    <Product>族谱客户端安装程序</Product>
+    <NoWarn>$(NoWarn);IL2026;IL2104;IL3050</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 只用到 GDI+ 画界面，不引入 WinForms（那样会多 55 MB） -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+  </ItemGroup>
+</Project>

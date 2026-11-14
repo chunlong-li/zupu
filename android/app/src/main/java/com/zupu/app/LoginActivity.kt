@@ -69,6 +69,10 @@ class LoginActivity : AppCompatActivity() {
                 Prefs.addAddress(this@LoginActivity, address)
                 Prefs.saveToken(this@LoginActivity, r.token, r.userName, "", r.userJson)
                 Prefs.saveUid(this@LoginActivity, r.uid)
+                runCatching {
+                    val role = org.json.JSONObject(r.userJson).optString("role")
+                    Prefs.setRoleName(this@LoginActivity, role)
+                }
                 openWeb()
             } catch (e: Exception) {
                 err(e.message ?: "登录失败")

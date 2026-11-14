@@ -87,7 +87,8 @@ func main() {
 	// 局域网广播发现（手机 App 自动找服务用；FAMILY_TREE_DISCOVERY=0 可关）
 	if discovery.Enabled() {
 		p, _ := strconv.Atoi(cfg.Port)
-		discovery.Start(p, ver)
+		discovery.Start(p, ver)          // 可选：UDP 广播（容器需映射 UDP 端口）
+		discovery.StartMDNS(p, ver)      // mDNS/Bonjour（非容器安装可直接被发现；容器需 host 网络）
 	}
 	log.Printf("族谱系统 v%s 已启动，监听 %s", ver, addr)
 	if err := r.Run(addr); err != nil {

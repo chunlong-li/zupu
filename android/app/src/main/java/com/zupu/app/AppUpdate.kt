@@ -11,7 +11,10 @@ import org.json.JSONObject
 object AppUpdate {
 
     // 与族谱更新网关同一个域名
-    private const val MANIFEST = "https://zupu-update.lijiacore.com:4440/app/app-latest.json"
+    // 正式版清单（APP 设置里检查）
+    private const val MANIFEST_STABLE = "https://zupu-update.lijiacore.com:4440/app/app-latest.json"
+    // 测试版清单（长按顶栏家族名检查）
+    private const val MANIFEST_BETA = "https://zupu-update.lijiacore.com:4440/app/app-beta.json"
 
     data class Info(
         val versionCode: Int,
@@ -39,11 +42,11 @@ object AppUpdate {
             .build()
     }
 
-    fun check(onResult: (Info?, String?) -> Unit) {
+    fun check(stableOnly: Boolean = true, onResult: (Info?, String?) -> Unit) {
         Thread {
             var err: String? = null
             val info = runCatching {
-                val req = Request.Builder().url(MANIFEST).build()
+                val req = Request.Builder().url(if (stableOnly) MANIFEST_STABLE else MANIFEST_BETA).build()
                 insecureClient.newCall(req).execute().use { r ->
                     if (!r.isSuccessful) return@use null
                     val s = r.body?.string() ?: return@use null
@@ -57,6 +60,11 @@ object AppUpdate {
                     )
                 }
             }.onFailure { err = it.message ?: it.javaClass.simpleName }.getOrNull()
+            // 测试通道没有清单时：回落到正式通道，避免长按直接报错
+            if (info == null && !stableOnly) {
+                check(true, onResult)
+                return@Thread
+            }
             onResult(info, err)
         }.start()
     }

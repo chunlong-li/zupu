@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>false</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ZupuSetup</AssemblyName>
+    <RootNamespace>ZupuSetup</RootNamespace>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <DebugType>none</DebugType>
+    <ApplicationIcon>..\windows-client\app.ico</ApplicationIcon>
+    <Version>1.2.0</Version>
+    <InformationalVersion>1.2.0.1113.4</InformationalVersion>
+    <Company>族谱系统</Company>
+    <Product>族谱客户端安装程序</Product>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+  <!-- 载荷（app 的 zip）作为嵌入资源打进程序集；-p:PayloadPath=<zip> 指定，未指定则跳过 -->
+  <ItemGroup Condition="'$(PayloadPath)' != ''">
+    <EmbeddedResource Include="$(PayloadPath)" LogicalName="payload.zip" />
+  </ItemGroup>
+</Project>

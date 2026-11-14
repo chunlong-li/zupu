@@ -26,6 +26,10 @@ object Prefs {
     fun tokenUser(c: Context) = sp(c).getString("tokenUser", "") ?: ""
     fun role(c: Context) = sp(c).getString("role", "") ?: ""
     fun userJson(c: Context) = sp(c).getString("userJson", "") ?: ""
+
+    /** 登录时后端返回的角色（超级管理员 / 理事长 / 族员 …） */
+    fun roleName(c: Context) = sp(c).getString("roleName", "") ?: ""
+    fun setRoleName(c: Context, r: String) { sp(c).edit().putString("roleName", r).apply() }
     fun uid(c: Context) = sp(c).getLong("uid", 0L)
 
     /** 返回键行为：web = 网页内后退（默认）；exit = 再按一次退出 App */

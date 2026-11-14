@@ -161,6 +161,26 @@
     <el-card class="section update-log">
       <template #header><span>版本更新日志</span></template>
       <el-collapse v-model="activeLogs">
+                                      <el-collapse-item name="logStable140">
+            <template #title>
+              <span class="log-title">v1.4.0</span>
+              <span class="log-count">2026-11-12 发布</span>
+            </template>
+            <div class="log-entry">
+              <div class="log-entry-head">
+                <span class="log-ver">v1.4.0</span>
+                <span class="log-date">2026-11-12</span>
+              </div>
+              <div class="log-entry-body">
+                <p><b>局域网自动发现</b></p>
+                <p>· 服务启动后会自动在本局域网广播（mDNS/Bonjour，服务类型 _zupu._tcp），手机 App 打开「发现局域网内设备」即可秒找到本机地址，不用再手动输 IP。</p>
+                <p>· 直接装在宿主机（二进制/tar.gz/zip）的系统开箱即用；<b>用 Docker 装的，容器必须用 host 网络</b>才能被搜到（bridge 网络不转发多播）。</p>
+                <p>· 想关掉：环境变量 <code>FAMILY_TREE_MDNS=0</code>；自定义名字：<code>FAMILY_TREE_MDNS_NAME=xxx</code>。</p>
+                <p><b>修复</b></p>
+                <p>· 成员详情页「添加子女」时，子女姓名会被当前成员姓名覆盖，现已修复（会留空等你填写）。</p>
+              </div>
+            </div>
+          </el-collapse-item>
                                       <el-collapse-item name="logStable1315">
             <template #title>
               <span class="log-title">v1.3.15</span>
@@ -2022,7 +2042,7 @@ function compareVersion(a, b) {
 onMounted(async () => {
   try {
     const { data } = await api.get('/settings/version')
-    currentVersion.value = data.version || '1.3.15.1110.2'
+    currentVersion.value = data.version || '1.4.0'
   } catch (e) { /* ignore */ }
   checkManifestUpdate() // 打开页面自动检查一次更新
 })

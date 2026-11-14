@@ -53,8 +53,9 @@ class MainActivity : AppCompatActivity() {
         b.tvBranch.setOnClickListener { pickBranch() }
         b.btnLogout.setOnClickListener { confirmLogout() }
         // 长按家族名 = 检查 App 更新（隐藏入口，不占界面）
+        // 长按家族名 → 检查「测试版」通道
         b.tvTitle.setOnLongClickListener {
-            AppUpdate.check { info, err ->
+            AppUpdate.check(stableOnly = false) { info, err ->
                 runOnUiThread {
                     if (info != null) AppUpdate.prompt(this, info)
                     else toast("检查更新失败：" + (err ?: "清单为空"))
@@ -70,7 +71,13 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-    /** 可折叠抽屉：分组默认收起 */
+    /** 是否管理角色（决定「系统设置」里的项是否可见） */
+    private fun isAdminRole(): Boolean {
+        val r = Prefs.roleName(this)
+        return r.contains("超级管理员") || r.contains("理事长") || r.contains("管理员")
+    }
+
+    /** 可折叠抽屉：分组默认收起（按角色隐藏无权限的菜单） */
     private fun setupDrawer() {
         val D = DrawerAdapter::class.java.declaredClasses[0]
         val groups = listOf(
@@ -113,14 +120,18 @@ class MainActivity : AppCompatActivity() {
                 DrawerAdapter.Item("📜 字辈派语", "/generation"),
                 DrawerAdapter.Item("💍 配偶资料", "/spouses-list"),
                 DrawerAdapter.Item("📚 家族知识库", "/knowledge"),
-                DrawerAdapter.Item("💰 收支公示", "/accounts"),
-                DrawerAdapter.Item("🪦 功德碑", "/merit")
+                *(if (isAdminRole()) arrayOf(
+                    DrawerAdapter.Item("💰 收支公示", "/accounts"),
+                    DrawerAdapter.Item("🪦 功德碑", "/merit")
+                ) else emptyArray())
             )),
-            DrawerAdapter.Group("⚙️ 系统设置", listOf(
+            DrawerAdapter.Group("⚙️ 系统设置", if (isAdminRole()) listOf(
                 DrawerAdapter.Item("🏷️ 家族设置", "/settings"),
                 DrawerAdapter.Item("🩺 数据体检", "/data-check"),
                 DrawerAdapter.Item("💾 备份管理", "/backup"),
                 DrawerAdapter.Item("⬆️ 版本更新", "/update"),
+                DrawerAdapter.Item("📖 使用说明", "/usage-guide")
+            ) else listOf(
                 DrawerAdapter.Item("📖 使用说明", "/usage-guide")
             )),
             // 顶层菜单项：没有子项，点标题直接打开 APP 设置
@@ -128,6 +139,7 @@ class MainActivity : AppCompatActivity() {
         )
         val adapter = DrawerAdapter(this, groups)
         b.nav.setAdapter(adapter)
+        if (adapter.groupCount > 0) b.nav.expandGroup(0)   // 默认展开第一个分组「常用」
         b.nav.setOnGroupClickListener { _, _, groupPos, _ ->
             if (adapter.getChildrenCount(groupPos) == 0) {
                 b.drawer.closeDrawers()
@@ -194,6 +206,13 @@ class MainActivity : AppCompatActivity() {
     /** 切到网页的某个路由：网页是 history 模式，必须走 /路径 而不是 #/路径 */
     private fun navigate(route: String) {
         val base = Prefs.address(this)
+        // 知识库是 iframe + SSO Cookie：在 App 里改成「顶层直接打开」，
+        // 这样 Cookie 是一等公民，不会被 iframe 的三方 Cookie 策略拦掉。
+        if (route.startsWith("/knowledge")) {
+            val t = java.net.URLEncoder.encode(Prefs.token(this), "UTF-8")
+            b.webView.loadUrl("$base/knowledge/?token=$t")
+            return
+        }
         // 首选：网页若暴露了 router（后续版本），直接 push，不重载
         val js = """
             (function(){try{
@@ -220,6 +239,11 @@ class MainActivity : AppCompatActivity() {
         val userJson = Prefs.userJson(this).ifBlank { "{}" }
         val userName = Prefs.tokenUser(this)
 
+        // 知识库是 iframe + SSO Cookie 联动：不启用 Cookie 会一直「未登录」
+        android.webkit.CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(b.webView, true)
+        }
         b.webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true

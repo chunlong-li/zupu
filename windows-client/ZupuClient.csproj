@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ZupuClient</AssemblyName>
+    <RootNamespace>ZupuClient</RootNamespace>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <Version>1.2.0</Version>
+    <!-- 版本号规则（用户约定）：
+         三段 n.n.n 固定；发正式版时第三段 +1（一、二段等用户指定）；
+         加功能/修 bug 发测试版：<三段>.<MMDD>.<当天第几次>。
+         5 段号不是合法程序集版本，所以完整号放 InformationalVersion，界面/更新比较都用它。 -->
+    <InformationalVersion>1.2.0.1113.6</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Company>族谱系统</Company>
+    <Product>族谱客户端</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- UseWPF 会改写隐式 using 集合，这里显式补回 -->
+    <Using Include="System.IO" />
+    <Using Include="System.Linq" />
+    <Using Include="System.Collections.Generic" />
+    <Using Include="System.Threading" />
+    <Using Include="System.Threading.Tasks" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 内置 Chromium（CEF），不依赖系统 WebView2/Edge -->
+    <PackageReference Include="CefSharp.WinForms.NETCore" Version="156.0.150" />
+    <!-- 密码用 Windows DPAPI 加密后落盘（.NET 5+ 需单独引用此包） -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+</Project>

@@ -23,7 +23,7 @@ class AppSettingsActivity : AppCompatActivity() {
         }
 
         b.rowUpdate.setOnClickListener {
-            AppUpdate.check { info, err ->
+            AppUpdate.check(stableOnly = true) { info, err ->
                 runOnUiThread {
                     if (info != null) AppUpdate.prompt(this, info)
                     else Toast.makeText(this, "检查更新失败：" + (err ?: "清单为空"), Toast.LENGTH_LONG).show()

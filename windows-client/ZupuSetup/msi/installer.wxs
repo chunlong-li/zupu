@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <!--
+    族谱客户端 安装包（MSI，每用户安装，不需要管理员）
+    · 载荷 = windows-client\publish-cef 下的全部文件
+    · 桌面 + 开始菜单快捷方式
+    · 控制面板「应用」里的卸载项由 Package 属性自动生成
+    构建：wix build installer.wxs -arch x64 -ext WixToolset.UI.wixext -out <msi>
+  -->
+  <Package Name="族谱客户端"
+           Manufacturer="族谱系统"
+           Version="1.2.0"
+           UpgradeCode="9F1C4A02-6B7E-4D21-9E3A-1C55B7D0A4E8"
+           Scope="perUser"
+           Compressed="yes"
+           Codepage="936"
+           InstallerVersion="500">
+
+    <SummaryInformation Description="族谱客户端安装程序" Manufacturer="族谱系统" />
+
+    <MajorUpgrade DowngradeErrorMessage="已安装更高版本的族谱客户端，请先卸载。" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AppIcon" SourceFile="..\..\windows-client\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsDir" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="族谱客户端" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppMenuDir" Name="族谱客户端" />
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Main" Title="族谱客户端" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="Shortcuts" />
+    </Feature>
+
+    <!-- 程序文件：整个发布目录 -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="..\..\publish-cef\**" />
+    </ComponentGroup>
+
+    <!-- 快捷方式 -->
+    <Component Id="Shortcuts" Directory="INSTALLFOLDER" Guid="2A6D3E11-8C47-4F0B-B1D9-7E5A93C4F210">
+      <Shortcut Id="DesktopShortcut"
+                Directory="DesktopFolder"
+                Name="族谱客户端"
+                Description="族谱客户端"
+                Target="[INSTALLFOLDER]ZupuClient.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="AppIcon" />
+      <Shortcut Id="StartMenuShortcut"
+                Directory="AppMenuDir"
+                Name="族谱客户端"
+                Description="族谱客户端"
+                Target="[INSTALLFOLDER]ZupuClient.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="AppIcon" />
+      <RemoveFolder Id="RemoveAppMenuDir" Directory="AppMenuDir" On="uninstall" />
+      <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\ZupuClient" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
+    <WixVariable Id="WixUIBannerBmp" Value="banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="dialog.bmp" />
+  </Package>
+</Wix>

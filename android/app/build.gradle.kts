@@ -11,8 +11,8 @@ android {
         applicationId = "com.zupu.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.0.1"
+        versionCode = 22
+        versionName = "1.0.5"
     }
 
     signingConfigs {
