@@ -333,6 +333,7 @@ func Setup(cfg *config.Config, db *sql.DB, scheduler *backup.Scheduler) *gin.Eng
 			authGroup.PUT("/traditions/:id", handler.RequirePriv("member_edit"), trad.UpdateTradition)
 			authGroup.DELETE("/traditions/:id", handler.RequirePriv("member_edit"), trad.DeleteTradition)
 			// 「不固定」节日的本年临时日期（按 节日 + 年份 存，过期自动失效）
+			authGroup.POST("/traditions/seed-defaults", handler.RequirePriv("member_edit"), trad.SeedDefaultTraditions)
 			authGroup.PUT("/traditions/:id/temp-date", handler.RequirePriv("member_edit"), trad.SetTraditionTempDate)
 
 			// 首页「未来 30 天」：传统节日 + 族人生日 + 忌日（族员及以上；游客/未登录 401）

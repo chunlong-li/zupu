@@ -9,6 +9,7 @@
 
     <!-- 理事及以上可新增 -->
     <div class="toolbar" v-if="isElder">
+      <el-button v-if="isElder" @click="seedDefaults">补充通用节日</el-button>
       <el-button type="primary" size="small" @click="openAdd">+ 新增日程</el-button>
     </div>
 
@@ -24,7 +25,12 @@
       <el-table-column label="今年公历 / 临时日期（本年）" width="300">
         <template #default="{ row }">
           <div v-if="row.lunar_day === 0" class="temp-cell">
-            <div v-if="row.temp_solar_date" class="temp-ok">
+            <!-- 服务端能自动算出来的（如除夕：腊月最后一天）直接显示，不用手填 -->
+            <div v-if="row.this_year_solar && !row.temp_solar_date" class="temp-ok">
+              {{ row.this_year_solar }}
+              <span class="temp-days">自动计算</span>
+            </div>
+            <div v-else-if="row.temp_solar_date" class="temp-ok">
               {{ row.temp_solar_date }}
               <span class="temp-days">{{ dayText(row.temp_days) }}</span>
             </div>
@@ -33,7 +39,7 @@
               {{ row.temp_expired_date }} 已过期，回到「不固定」
             </div>
             <div v-else class="temp-none">不固定</div>
-            <el-button v-if="isElder" size="small" link type="primary" class="temp-btn" @click="openTemp(row)">
+            <el-button v-if="isElder && !row.this_year_solar" size="small" link type="primary" class="temp-btn" @click="openTemp(row)">
               {{ row.temp_solar_date ? '修改临时日期' : '填临时日期' }}
             </el-button>
           </div>
@@ -84,17 +90,18 @@
       <div class="temp-dialog">
         <p class="temp-name">🎏 {{ tempForm.title }}</p>
         <p class="temp-hint">
-          该节日为「不固定」（没有固定农历日）。可填入 <b>{{ tempForm.year }} 年</b>的具体公历日期：
-          填了立即显示该日期；<b>日期一过即自动回到「不固定」</b>，也不会沿用到下一年。
+          该节日为「不固定」（没有固定农历日）。请选择 <b>{{ tempForm.year }} 年（农历）</b>的月份和日期：
+          选好会自动换算成公历显示；<b>日期一过即自动回到「不固定」</b>，也不会沿用到下一年。
         </p>
-        <el-date-picker
-          v-model="tempForm.date"
-          type="date"
-          value-format="YYYY-MM-DD"
-          format="YYYY-MM-DD"
-          :placeholder="tempForm.year + '-MM-DD'"
-          style="width:100%"
-        />
+        <div class="lunar-pick">
+          <el-select v-model="tempForm.lunar_month" placeholder="农历月" style="width:44%">
+            <el-option v-for="m in 12" :key="m" :label="lunarMonthName(m)" :value="m" />
+          </el-select>
+          <el-select v-model="tempForm.lunar_day" placeholder="农历日" style="width:44%">
+            <el-option v-for="d in 30" :key="d" :label="lunarDayName(d)" :value="d" />
+          </el-select>
+        </div>
+        <el-checkbox v-model="tempForm.is_leap" style="margin-top:8px">闰月（该年有闰月时才需要勾）</el-checkbox>
         <p v-if="tempForm.current" class="temp-cur">当前：{{ tempForm.current }}</p>
       </div>
       <template #footer>
@@ -123,7 +130,7 @@ const form = ref({ id: 0, title: '', lunar_month: 1, lunar_day: 1, is_leap_month
 const nowYear = new Date().getFullYear()
 const tempVisible = ref(false)
 const tempSaving = ref(false)
-const tempForm = ref({ id: 0, title: '', year: nowYear, date: '', current: '' })
+const tempForm = ref({ id: 0, title: '', year: nowYear, date: '', current: '', lunar_month: 1, lunar_day: 1, is_leap: false })
 
 function dayText(d) { return Number(d) === 0 ? '今天' : `还有 ${d} 天` }
 
@@ -136,9 +143,31 @@ function openTemp(row) {
     title: row.title,
     year: nowYear,
     date: row.temp_solar_date || '',
-    current: cur
+    current: cur,
+    lunar_month: row.lunar_month || 1,
+    lunar_day: 1,
+    is_leap: false
   }
   tempVisible.value = true
+}
+
+async function saveTemp() {
+  tempSaving.value = true
+  try {
+    await api.put('/traditions/' + tempForm.value.id + '/temp-date', {
+      year: tempForm.value.year,
+      lunar_month: tempForm.value.lunar_month,
+      lunar_day: tempForm.value.lunar_day,
+      is_leap: tempForm.value.is_leap
+    })
+    ElMessage.success('已按农历设置临时日期')
+    tempVisible.value = false
+    load()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.error || '保存失败')
+  } finally {
+    tempSaving.value = false
+  }
 }
 
 async function putTemp(date) {
@@ -152,11 +181,6 @@ async function putTemp(date) {
     ElMessage.error(e.response?.data?.error || '操作失败')
   }
   tempSaving.value = false
-}
-
-function saveTemp() {
-  if (!tempForm.value.date) { ElMessage.warning('请选择日期，或点「清除临时日期」'); return }
-  putTemp(tempForm.value.date)
 }
 
 async function clearTemp() {
@@ -173,6 +197,22 @@ const lunarDayNames = ['', '初一', '初二', '初三', '初四', '初五', '�
 
 function lunarMonthName(m) { return lunarMonthNames[m] || m }
 function lunarDayName(d) { return Number(d) === 0 ? '不固定' : (lunarDayNames[d] || d) }
+
+async function seedDefaults() {
+  try {
+    await ElMessageBox.confirm(
+      '会自动补充：春节、除夕、元宵、龙抬头、清明、端午、七夕、中元、中秋、重阳、寒衣、下元、腊八、小年。\n已存在的同名节日会跳过，不会改动你已有的条目。\n\n其中「除夕」「清明」每年日期不同，补充后可逐个填临时日期（现在支持直接选农历月/日）。',
+      '补充通用节日', { type: 'info', confirmButtonText: '开始补充' }
+    )
+  } catch (e) { return }
+  try {
+    const r = await api.post('/traditions/seed-defaults')
+    ElMessage.success(r.data?.message || '已补充通用节日')
+    load()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.error || '补充失败')
+  }
+}
 
 function checkRole() {
   try {

@@ -2,8 +2,12 @@ package handler
 
 import (
 	"database/sql"
+	"familytree/internal/lunar"
+	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -83,6 +87,22 @@ func (h *TraditionHandler) ListTraditions(c *gin.Context) {
 		}
 		t.IsLeapMonth = leap != 0
 		t.Unfixed = t.LunarDay == 0
+		// 除夕：腊月最后一天（廿九或三十），每年自动算，不用手工填临时日期
+		// 可按日历自动算的「不固定」节日：除夕=腊月最后一天；清明=节气
+		if t.LunarDay == 0 {
+			auto := ""
+			switch {
+			case strings.Contains(t.Title, "除夕"):
+				auto = lunar.LastDayOfLunarYear(now.Year())
+			case strings.Contains(t.Title, "清明"):
+				auto = lunar.JieQiGregorian(now.Year(), "清明")
+			}
+			if auto != "" {
+				t.ThisYearSolar = auto
+				list = append(list, t)
+				continue
+			}
+		}
 		if t.Unfixed {
 			// 不固定：只有本年临时日期且未过期才显示具体日期；过期即回到「不固定」，不沿用到下一年
 			if ds, ok := tempDates[t.ID]; ok && ds != "" {
@@ -102,6 +122,12 @@ func (h *TraditionHandler) ListTraditions(c *gin.Context) {
 		}
 		list = append(list, t)
 	}
+	// 排序：按农历月日；「不固定」但能自动算的节日按实际位置排
+	//   除夕 = 腊月最后一天 → 排在腊月所有节日之后
+	//   清明 = 节气在 3 月初 → 排在三月节日之前
+	sort.SliceStable(list, func(i, j int) bool {
+		return tradOrderKey(list[i]) < tradOrderKey(list[j])
+	})
 	c.JSON(http.StatusOK, list)
 }
 
@@ -112,8 +138,11 @@ func (h *TraditionHandler) SetTraditionTempDate(c *gin.Context) {
 	ensureTraditionTempDates(h.DB)
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	var req struct {
-		Year int    `json:"year"`
-		Date string `json:"date"`
+		Year       int    `json:"year"`
+		Date       string `json:"date"`
+		LunarMonth int    `json:"lunar_month"` // 传农历月/日时优先（前端改成农历选择）
+		LunarDay   int    `json:"lunar_day"`
+		IsLeap     bool   `json:"is_leap"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -131,6 +160,20 @@ func (h *TraditionHandler) SetTraditionTempDate(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// 前端现在选的是「农历月/日」，这里转成公历再存（后端 lunar 包已具备能力）
+	if req.LunarMonth > 0 && req.LunarDay > 0 {
+		leap := 0
+		if req.IsLeap {
+			leap = 1
+		}
+		info := lunar.LunarToGregorian(req.Year, req.LunarMonth, leap, req.LunarDay)
+		if info.Gregorian == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "农历日期无效"})
+			return
+		}
+		req.Date = info.Gregorian
+	}
+
 	// 只有「不固定」（农历日 = 0）的节日才需要临时日期
 	if lunarDay != 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该节日有固定农历日，无需临时日期"})
@@ -268,4 +311,67 @@ func (h *TraditionHandler) DeleteTradition(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// SeedDefaultTraditions 一键补全「通用节日」：只插入库里还没有的（按标题去重），不动已有条目。
+// POST /api/traditions/seed-defaults
+//
+// 除夕、清明这类「每年日期不定」的节日，农历日填 0（不固定），
+// 由用户在传统日程里按年份填临时日期（可选农历月/日，后端换算成公历）。
+func (h *TraditionHandler) SeedDefaultTraditions(c *gin.Context) {
+	ensureTraditionTempDates(h.DB)
+
+	defaults := []struct {
+		Title string
+		Month int
+		Day   int // 0 = 不固定
+		Desc  string
+	}{
+		{"春节", 1, 1, "农历正月初一，岁首"},
+		{"除夕", 12, 0, "农历腊月最后一天（廿九或三十），日期每年不同，请按年填写临时日期"},
+		{"元宵节", 1, 15, "农历正月十五，上元节"},
+		{"龙抬头", 2, 2, "农历二月初二"},
+		{"清明节", 3, 0, "按节气，公历 4 月 4~6 日，每年不同，请按年填写临时日期"},
+		{"端午节", 5, 5, "农历五月初五"},
+		{"七夕", 7, 7, "农历七月初七"},
+		{"中元节", 7, 15, "农历七月十五，七月半"},
+		{"中秋节", 8, 15, "农历八月十五"},
+		{"重阳节", 9, 9, "农历九月初九"},
+		{"寒衣节", 10, 1, "农历十月初一"},
+		{"下元节", 10, 15, "农历十月十五"},
+		{"腊八节", 12, 8, "农历十二月初八"},
+		{"小年", 12, 23, "农历腊月廿三（南方多为廿四）"},
+	}
+
+	added := 0
+	for _, d := range defaults {
+		var exists int
+		_ = h.DB.QueryRow(`SELECT COUNT(*) FROM traditions WHERE title = ?`, d.Title).Scan(&exists)
+		if exists > 0 {
+			continue
+		}
+		if _, err := h.DB.Exec(
+			`INSERT INTO traditions (title, lunar_month, lunar_day, is_leap_month, description) VALUES (?,?,?,0,?)`,
+			d.Title, d.Month, d.Day, d.Desc,
+		); err == nil {
+			added++
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"added": added, "message": fmt.Sprintf("已补充 %d 个通用节日", added)})
+}
+
+// tradOrderKey 排序列：农历月 * 100 + 日；不固定节日用推断位置
+func tradOrderKey(t Tradition) int {
+	day := t.LunarDay
+	if day == 0 {
+		switch {
+		case strings.Contains(t.Title, "除夕"):
+			day = 99 // 腊月最末
+		case strings.Contains(t.Title, "清明"):
+			day = 1 // 三月初
+		default:
+			day = 50 // 其它不固定：放月中
+		}
+	}
+	return t.LunarMonth*100 + day
 }

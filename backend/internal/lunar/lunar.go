@@ -3,6 +3,7 @@ package lunar
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	lunar "github.com/6tail/lunar-go/calendar"
 )
@@ -144,4 +145,37 @@ func LunarToGregorian(y, m, leap, d int) DateInfo {
 		Era:       era,
 		EraYear:   eraYear,
 	}
+}
+
+// LastDayOfLunarYear 返回某个农历年「腊月最后一天」的公历日期（即除夕）。
+// 腊月可能是 29 天也可能是 30 天，所以用「次年正月初一 减一天」来算，天然准确。
+func LastDayOfLunarYear(year int) string {
+	first := lunar.NewLunar(year+1, 1, 1, 0, 0, 0).GetSolar()
+	t := time.Date(first.GetYear(), time.Month(first.GetMonth()), first.GetDay(), 0, 0, 0, 0, time.Local)
+	return t.AddDate(0, 0, -1).Format("2006-01-02")
+}
+
+// JieQiGregorian 返回某年某个节气（如「清明」）对应的公历日期。
+// 用于「每年日期按节气走」的节日（清明等），无需手工填临时日期。
+func JieQiGregorian(year int, name string) string {
+	// 节气表按节气所在年份组织，取该年 6 月前后那份就能覆盖清明
+	l := lunar.NewLunar(year, 6, 1, 0, 0, 0)
+	for k, v := range l.GetJieQiTable() {
+		if k != name || v == nil {
+			continue
+		}
+		if v.GetYear() == year {
+			return fmt.Sprintf("%04d-%02d-%02d", v.GetYear(), v.GetMonth(), v.GetDay())
+		}
+	}
+	return ""
+}
+
+// ZodiacOfYear 返回公历年份对应的生肖（按农历年，春节后生效；这里按生年近似）
+func ZodiacOfYear(y int) string {
+	if y <= 0 {
+		return ""
+	}
+	// 取该年 6 月 1 日的农历生肖，避开「年初跨春节」的边界问题
+	return FromGregorian(y, 6, 1).Animal
 }

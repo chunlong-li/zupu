@@ -34,7 +34,7 @@ func (h *UpdateHandler) currentVersion() string {
 	var v string
 	h.DB.QueryRow(`SELECT value FROM settings WHERE key = 'version'`).Scan(&v)
 	if v == "" {
-		return "1.4.0"
+		return "1.4.0.1121.2"
 	}
 	return v
 }

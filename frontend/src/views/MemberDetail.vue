@@ -60,6 +60,7 @@
             <div class="info-item"><span class="label">学历</span><span>{{ member.education || '—' }}</span></div>
             <div class="info-item"><span class="label">生卒</span><span>{{ lifeDatesText }}</span></div>
             <div class="info-item" v-if="member.lifespan"><span class="label">享年</span><span>{{ member.lifespan }} 岁</span></div>
+            <div class="info-item" v-if="member.zodiac"><span class="label">生肖</span><span>{{ member.zodiac }}</span></div>
             <div class="info-item" v-if="calcAges()"><span class="label">年龄</span><span>{{ calcAges() }}</span></div>
             <div class="info-item"><span class="label">葬地</span><span>{{ member.burial_place || '—' }}</span></div>
             <div class="info-item" v-if="member.married_out"><span class="label">出嫁</span><span>{{ member.married_out }}</span></div>

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 // 取代早期逆向飞牛分享 API 的方案（fshare.go 已移除）。
 
 const manifestTimeout = 30 * time.Second
+
 // 更新包下载单独算超时：清单只有几 KB（30s 足够），但更新包 10MB 起，
 // 手机网络/NAS 跨境链路下 30s 经常不够，会报「context deadline exceeded」（属主 2026-11-07 实测）。
 const downloadTimeout = 20 * time.Minute
@@ -38,7 +40,7 @@ func (h *UpdateHandler) manifestHTTPClient() *http.Client {
 // downloadHTTPClient 下载更新包专用：超时放宽到 20 分钟，避免大包在慢链路上被 30 秒掐断
 func (h *UpdateHandler) downloadHTTPClient() *http.Client {
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: h.Cfg.UpdateInsecure}, // #nosec G402 -- 同上
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: h.Cfg.UpdateInsecure}, // #nosec G402 -- 同上
 		ResponseHeaderTimeout: 60 * time.Second,
 		IdleConnTimeout:       90 * time.Second,
 	}
@@ -294,6 +296,14 @@ func (h *UpdateHandler) CheckManifestUpdate(c *gin.Context) {
 
 	// 按当前平台从 packages.json 选版本最高的包（避免 latest.json 单一 url 下错平台）
 	best, bestSource := h.bestPackageForPlatform()
+	if best == nil && c.Query("channel") != "beta" {
+		// 兜底：自建源全挂时改查 GitHub Release。
+		// 只用于正式版检查——GitHub 上只有正式版，测试版（channel=beta）不做兜底。
+		if gh, ghs := h.githubFallbackPackage(); gh != nil {
+			best, bestSource = gh, ghs
+			results = append(results, sourceScanResult{Source: ghs, Ok: true, Version: gh.Version})
+		}
+	}
 	if best == nil {
 		msg := "所有更新源均无法获取（请检查更新地址与网络）"
 		for _, r := range results {
@@ -530,4 +540,69 @@ func verifySHA256(file, expect string) error {
 // manifestFileName 生成带版本号的文件名，供 applyUpdate 解析版本
 func manifestFileName(ver string) string {
 	return "族谱系统v" + ver + ".update.tar.gz"
+}
+
+// githubFallbackPackage 兜底更新源：官方 GitHub Release。
+// 所有自建更新源都连不上时（域名过期/证书问题/被墙），仍能检查到新版本。
+// 只有包直接可下载（公开仓库，无需 token）。
+func (h *UpdateHandler) githubFallbackPackage() (*packageEntry, string) {
+	api := "https://api.github.com/repos/chunlong-li/zupu/releases/latest"
+	req, err := http.NewRequest("GET", api, nil)
+	if err != nil {
+		return nil, ""
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "familytree-updater")
+	resp, err := h.manifestHTTPClient().Do(req)
+	if err != nil {
+		return nil, ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, ""
+	}
+	var rel struct {
+		TagName string `json:"tag_name"`
+		Body    string `json:"body"`
+		Assets  []struct {
+			Name string `json:"name"`
+			Size int64  `json:"size"`
+			URL  string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return nil, ""
+	}
+	ver := strings.TrimPrefix(strings.TrimSpace(rel.TagName), "v")
+	if ver == "" {
+		return nil, ""
+	}
+
+	// 按平台挑资产：linux-amd64 / linux-arm64 / Windows
+	want := []string{"linux-amd64", "linux-arm64"}
+	if runtime.GOOS == "windows" {
+		want = []string{"Windows", "windows"}
+	} else if runtime.GOARCH == "arm64" {
+		want = []string{"linux-arm64", "arm64"}
+	}
+	for _, a := range rel.Assets {
+		for _, w := range want {
+			if strings.Contains(a.Name, w) {
+				return &packageEntry{
+					Name: a.Name, URL: a.URL, Version: ver, Size: a.Size,
+					Channel: "version", Notes: firstLines(rel.Body, 6),
+				}, "github.com/chunlong-li/zupu"
+			}
+		}
+	}
+	return nil, ""
+}
+
+// firstLines 取说明前 n 行（GitHub Release body 往往很长）
+func firstLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		lines = lines[:n]
+	}
+	return strings.Join(lines, "\n")
 }

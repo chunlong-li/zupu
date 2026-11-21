@@ -2042,7 +2042,7 @@ function compareVersion(a, b) {
 onMounted(async () => {
   try {
     const { data } = await api.get('/settings/version')
-    currentVersion.value = data.version || '1.4.0'
+    currentVersion.value = data.version || '1.4.0.1121.2'
   } catch (e) { /* ignore */ }
   checkManifestUpdate() // 打开页面自动检查一次更新
 })

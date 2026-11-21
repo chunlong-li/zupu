@@ -77,6 +77,50 @@
                     android:textSize="14sp" />
             </LinearLayout>
 
+            <!-- 电脑同步 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="电脑同步"
+                android:textColor="#6B7280"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/rowRemote"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="#FFFFFF"
+                android:orientation="horizontal"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="🖥 连接电脑（被控端同步）"
+                    android:textColor="#111827"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tvRemoteState"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="未开启"
+                    android:textColor="#9CA3AF"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:lineSpacingExtra="3dp"
+                android:text="· 开启后回到主界面会转成横屏，你在手机上的每次跳转、每笔修改都会同步到电脑\n· 被控端（电脑）此时只读：只跟着刷新看结果，不能自己改数据\n· 配对码在电脑客户端「连接设置 → 允许被控」里查看"
+                android:textColor="#9CA3AF"
+                android:textSize="12sp" />
+
             <!-- 操作习惯 -->
             <TextView
                 android:layout_width="wrap_content"

@@ -53,19 +53,34 @@ function sponsorKey() {
   }
 }
 
+// 是否已登录：没有 token 的访客/登录页一律不弹（2026-11-18 属主明确）
+function loggedIn() {
+  try { return !!localStorage.getItem('token') } catch (e) { return false }
+}
+
+// 登录后才判断要不要弹；已登录用户首次进主界面弹一次（每账号一次）
+let loginWatch = null
 onMounted(() => {
-  const key = sponsorKey()
-  try {
-    if (localStorage.getItem(key) === '1') return
-  } catch (e) {
-    return // 隐私模式/localStorage 不可用：不弹，不报错
-  }
-  autoTimer = setTimeout(() => {
+  const tryPop = () => {
+    if (!loggedIn()) return false
+    const key = sponsorKey()
+    try {
+      if (localStorage.getItem(key) === '1') return true
+    } catch (e) {
+      return true // 隐私模式/localStorage 不可用：不弹
+    }
     try { localStorage.setItem(key, '1') } catch (e) { /* ignore */ }
     visible.value = true
-  }, 800)
+    return true
+  }
+  if (tryPop()) return
+  // 未登录时不弹；等登录（同页登录后 token 才出现）后再判断，最多等 60 秒
+  let n = 0
+  loginWatch = setInterval(() => {
+    if (tryPop() || ++n > 60) { clearInterval(loginWatch); loginWatch = null }
+  }, 1000)
 })
-onBeforeUnmount(() => { if (autoTimer) clearTimeout(autoTimer) })
+onBeforeUnmount(() => { if (autoTimer) clearTimeout(autoTimer); if (loginWatch) clearInterval(loginWatch); })
 </script>
 
 <style scoped>

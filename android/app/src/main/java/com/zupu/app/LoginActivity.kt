@@ -32,12 +32,22 @@ class LoginActivity : AppCompatActivity() {
 
         b.btnLogin.setOnClickListener { doLogin() }
 
+        // 已配置「连接电脑」→ 不需要登录，页面和数据都由电脑提供
+        if (Prefs.remoteOn(this) && Prefs.remoteHost(this).isNotBlank()) {
+            openWeb()
+        }
+
         // 已登录过：直接进（token 还在就不必重填）
         if (Prefs.token(this).isNotBlank() && Prefs.address(this).isNotBlank()) {
             openWeb()
         }
 
         b.tvDiscover.setOnClickListener { discover() }
+        // 长按「发现局域网」→ APP 设置（里面可开启「连接电脑」，无需先登录）
+        b.tvDiscover.setOnLongClickListener {
+            startActivity(Intent(this, AppSettingsActivity::class.java))
+            true
+        }
     }
 
     /** 地址框：登录过的地址做下拉候选 */

@@ -22,6 +22,7 @@ class DiscoveryActivity : AppCompatActivity() {
     private val endpoints = ArrayList<String>()
     private lateinit var adapter: ArrayAdapter<String>
     private val mdns = LinkedHashMap<String, String>()   // endpoint -> label
+    private var remotes: List<RemoteDiscovery.Device> = emptyList()   // 被控电脑
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,7 +33,12 @@ class DiscoveryActivity : AppCompatActivity() {
         b.list.adapter = adapter
         b.btnBack.setOnClickListener { finish() }
         b.list.setOnItemClickListener { _, _, position, _ ->
-            val addr = endpoints.getOrNull(position) ?: return@setOnItemClickListener
+            // 前半部分是被控电脑，后面才是族谱服务
+            if (position < remotes.size) {
+                askPin(remotes[position])
+                return@setOnItemClickListener
+            }
+            val addr = endpoints.getOrNull(position - remotes.size) ?: return@setOnItemClickListener
             setResult(Activity.RESULT_OK, Intent().putExtra("address", addr))
             finish()
         }
@@ -44,6 +50,19 @@ class DiscoveryActivity : AppCompatActivity() {
                     mdns.clear()
                     list.forEach { f -> mdns[f.endpoint] = f.label }
                     render(hint = "mDNS 找到 ${list.size} 个（继续扫描端口…）")
+                }
+            }
+        }
+
+        // 持续监听被控电脑的广播（每 2 秒一条），扫到一台就立刻显示，不等扫描窗口结束
+        b.tvHint.text = "正在扫描局域网里的被控电脑…（电脑开启被控后会自动出现）"
+        lifecycleScope.launch {
+            RemoteDiscovery.listen { dev ->
+                runOnUiThread {
+                    if (remotes.none { it.key == dev.key }) {
+                        remotes = remotes + dev
+                        render(hint = "找到 " + remotes.size + " 台电脑，点一台输入被控码即可控制")
+                    }
                 }
             }
         }
@@ -69,6 +88,10 @@ class DiscoveryActivity : AppCompatActivity() {
     private fun render(hint: String) {
         val all = allEndpoints()
         items.clear(); endpoints.clear()
+        // 被控电脑优先
+        remotes.forEach { d ->
+            items.add("💻 " + d.name + "（被控端）\n" + d.host + ":" + d.port + " · 点击输入被控码")
+        }
         all.forEach { ep ->
             val label = mdns[ep]
             items.add(if (label.isNullOrBlank()) ep else "$label\n$ep")
@@ -76,6 +99,31 @@ class DiscoveryActivity : AppCompatActivity() {
         }
         adapter.notifyDataSetChanged()
         b.tvHint.text = hint
+    }
+
+    /** 输入被控码 → 记住并直接以被控模式进入 */
+    private fun askPin(dev: RemoteDiscovery.Device) {
+        val input = android.widget.EditText(this).apply {
+            hint = "6 位被控码"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setPadding(48, 32, 48, 32)
+        }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("连接 " + dev.name)
+            .setMessage(dev.host + ":" + dev.port + "\n被控码显示在电脑端「开启被控」里")
+            .setView(input)
+            .setPositiveButton("连接") { _, _ ->
+                val pin = input.text?.toString()?.trim().orEmpty()
+                if (pin.isEmpty()) {
+                    android.widget.Toast.makeText(this, "请填写被控码", android.widget.Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                Prefs.setRemote(this, dev.host, pin, true)
+                startActivity(Intent(this, MainActivity::class.java))
+                finish()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     override fun onDestroy() {

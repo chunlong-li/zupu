@@ -2,6 +2,7 @@ package com.zupu.app
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
@@ -10,6 +11,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -20,6 +22,12 @@ import com.zupu.app.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
+
+    /** 已生效的被控端同步配置（host|pin），用于判断设置是否变化 */
+    private var appliedRemoteKey = ""
+
+    /** 同步脚本（assets/zupu-sync.js）缓存，每个进程只读一次 */
+    private var syncJs: String? = null
     private var injected = false
     private val ui = Handler(Looper.getMainLooper())
 
@@ -30,7 +38,9 @@ class MainActivity : AppCompatActivity() {
                     "(function(){try{return localStorage.getItem('token')||''}catch(e){return ''}})()"
                 ) { v ->
                     val t = (v ?: "").trim('"')
-                    if (t.isBlank() && Prefs.token(this@MainActivity).isNotBlank()) backToLogin()
+                    // 被控模式：身份由电脑注入，手机自己不需要 token
+                    if (!Prefs.remoteOn(this@MainActivity) &&
+                        t.isBlank() && Prefs.token(this@MainActivity).isNotBlank()) backToLogin()
                 }
                 ui.postDelayed(this, 1500)
             }
@@ -44,7 +54,10 @@ class MainActivity : AppCompatActivity() {
         setContentView(b.root)
 
         val base = Prefs.address(this)
-        if (base.isBlank()) { backToLogin(); return }
+        // 被控模式用电脑地址，不要求填过服务器地址
+        if (base.isBlank() && !(Prefs.remoteOn(this) && Prefs.remoteHost(this).isNotBlank())) {
+            backToLogin(); return
+        }
 
         // ☰ 打开原生抽屉（不再借网页菜单）
         b.btnMenu.setOnClickListener { b.drawer.openDrawer(androidx.core.view.GravityCompat.START) }
@@ -65,11 +78,69 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupWebView(base)
-        b.webView.loadUrl(base)
+        loadEntry(base)
         // 上次更新下载的安装包若已安装完成 → 顺手删掉，不留垃圾
         AppUpdate.cleanup(this)
     }
 
+
+    /** 把同步脚本注入网页（仅在被控端同步开启时） */
+    private fun injectSyncScript(view: WebView) {
+        if (remoteKey().isEmpty()) return
+        if (syncJs == null) {
+            syncJs = runCatching {
+                assets.open("zupu-sync.js").bufferedReader().use { it.readText() }
+            }.getOrNull()
+        }
+        syncJs?.let { runCatching { view.evaluateJavascript(it, null) } }
+    }
+
+    /** 当前同步配置的标识；空串表示未开启 */
+    private fun remoteKey(): String {
+        val host = Prefs.remoteHost(this)
+        if (!Prefs.remoteOn(this) || host.isBlank()) return ""
+        return host + "|" + Prefs.remotePin(this)
+    }
+
+    /**
+     * 加载入口页。
+     * 开启「被控端同步」时，在地址后面带上 zupu-remote / pin 参数，
+     * 网页里的桥接脚本会自动连上电脑，并把本机操作同步过去；同时转横屏。
+     */
+    /** "1.2.3.4" / "1.2.3.4:47810" / "http://1.2.3.4:47810/" → (host, port) */
+    private fun parseHostPort(raw: String): Pair<String, Int> {
+        var s = raw.trim()
+        s = s.removePrefix("http://").removePrefix("https://").removePrefix("ws://").removePrefix("wss://")
+        s = s.substringBefore('/')
+        var host = s
+        var port = 47810
+        val idx = s.lastIndexOf(':')
+        if (idx > 0) {
+            host = s.substring(0, idx)
+            port = s.substring(idx + 1).toIntOrNull() ?: 47810
+        }
+        return Pair(host.trim(), port)
+    }
+
+    private fun loadEntry(base: String) {
+        val key = remoteKey()
+        appliedRemoteKey = key
+        if (key.isNotEmpty()) {
+            val host = Prefs.remoteHost(this)
+            val pin = Prefs.remotePin(this)
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            // 电脑本身就是服务器：页面和数据都直接从电脑取，使用电脑的登录态，无需在手机上登录
+            val ep = parseHostPort(host)
+            val pcBase = "http://" + ep.first + ":" + ep.second + "/"
+            val q = "?zupu-remote=" + android.net.Uri.encode(ep.first + ":" + ep.second) +
+                    "&pin=" + android.net.Uri.encode(pin)
+            b.webView.loadUrl(pcBase + q)
+            toast("已连接电脑：手机上的操作会同步过去")
+        } else {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            b.webView.loadUrl(base)
+        }
+    }
 
     /** 是否管理角色（决定「系统设置」里的项是否可见） */
     private fun isAdminRole(): Boolean {
@@ -250,6 +321,8 @@ class MainActivity : AppCompatActivity() {
             databaseEnabled = true
             loadWithOverviewMode = true
             useWideViewPort = true
+            // 被控同步要连局域网 ws://，页面走 HTTPS 时会被拦成混合内容，这里放行
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         }
         b.webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -259,6 +332,7 @@ class MainActivity : AppCompatActivity() {
         }
         b.webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
+            view?.let { injectSyncScript(it) }
                 super.onPageFinished(view, url)
                 if (!injected && token.isNotBlank()) {
                     injected = true
@@ -316,7 +390,14 @@ class MainActivity : AppCompatActivity() {
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val u = request?.url?.toString() ?: return false
-                if (u.contains("/login")) { backToLogin(); return true }
+                if (u.contains("/login")) {
+                  if (Prefs.remoteOn(this@MainActivity)) {
+                    // 被控模式：页面出现登录页说明身份没带上 → 重新从电脑入口加载一次
+                    ui.post { reloadRemoteEntry() }
+                    return true
+                  }
+                  backToLogin(); return true
+                }
                 return if (!u.startsWith(base)) {
                     runCatching { startActivity(Intent(Intent.ACTION_VIEW, request!!.url)) }
                     true
@@ -325,12 +406,25 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
-                if (url != null && url.contains("/login")) backToLogin()
+                if (url != null && url.contains("/login")) {
+                      if (Prefs.remoteOn(this@MainActivity)) { ui.post { reloadRemoteEntry() }; return }
+                      backToLogin()
+                  }
             }
         }
     }
 
     // ===== 房支 =====
+
+    /** 被控模式：重新打开电脑入口页（6 秒内最多一次，避免死循环刷新） */
+    private var lastRemoteReload = 0L
+    private fun reloadRemoteEntry() {
+        if (!Prefs.remoteOn(this)) { backToLogin(); return }
+        val now = System.currentTimeMillis()
+        if (now - lastRemoteReload < 6000) return
+        lastRemoteReload = now
+        if (this::b.isInitialized) loadEntry(Prefs.address(this))
+    }
 
     private fun pickBranch() {
         Thread {
@@ -470,7 +564,11 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         ui.postDelayed(tokenWatch, 1500)
-        if (this::b.isInitialized) b.webView.postDelayed({ syncBranchLabel() }, 800)
+        if (this::b.isInitialized) {
+            // 从设置页回来：同步开关变了就重新加载入口页
+            if (remoteKey() != appliedRemoteKey) loadEntry(Prefs.address(this))
+            b.webView.postDelayed({ syncBranchLabel() }, 800)
+        }
     }
 
     override fun onPause() { super.onPause(); ui.removeCallbacks(tokenWatch) }

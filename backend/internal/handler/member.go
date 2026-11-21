@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 // Member 成员结构体（对应 members 表）
 type Member struct {
 	ID               int64      `json:"id"`
+	Zodiac           string     `json:"zodiac"` // 生肖（按生年换算）
 	Generation       int        `json:"generation"`
 	Branch           string     `json:"branch"`
 	BranchID         int64      `json:"branch_id"`
@@ -180,6 +182,9 @@ func (h *MemberHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// 生肖：按农历年算（有完整公历日期就精确到日，只有年份则按该年年中近似）
+	m.Zodiac = zodiacOf(m.BirthGregorian, m.BirthLunar)
 
 	// 解密敏感字段
 	m.DecryptSensitive(h.EncKey)
@@ -815,4 +820,29 @@ func extractYear(s string) (int, bool) {
 		return y, true
 	}
 	return 0, false
+}
+
+// zodiacOf 由生日推算生肖：
+//
+//	· 有完整公历（YYYY-MM-DD）→ 用当日农历生肖（精确，春节前会算到上一年）
+//	· 只有年份 → 取该年年中（6/1）近似，避开年初边界
+//	· 只有农历文本 → 尝试解析农历年，取该年农历生肖
+func zodiacOf(gregorian, lunarStr string) string {
+	g := strings.TrimSpace(gregorian)
+	if m := regexp.MustCompile(`^(\d{4})-(\d{1,2})-(\d{1,2})`).FindStringSubmatch(g); m != nil {
+		y, _ := strconv.Atoi(m[1])
+		mo, _ := strconv.Atoi(m[2])
+		d, _ := strconv.Atoi(m[3])
+		if y > 0 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31 {
+			return lunar.FromGregorian(y, mo, d).Animal
+		}
+	}
+	if m := regexp.MustCompile(`^(\d{4})`).FindStringSubmatch(g); m != nil {
+		if y, err := strconv.Atoi(m[1]); err == nil && y > 0 {
+			return lunar.ZodiacOfYear(y)
+		}
+	}
+	// 农历文本（如「一九五〇年正月初一」）不解析：中文数字转公历不可靠，宁可留空也不猜
+	_ = lunarStr
+	return ""
 }

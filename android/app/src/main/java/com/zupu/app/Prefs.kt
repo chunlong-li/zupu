@@ -54,6 +54,18 @@ object Prefs {
         sp(c).edit().putBoolean("sponsorSeen:$uid", true).apply()
     }
 
+    // ── 被控端同步（连到电脑）──
+    object Features { const val REMOTE = false }   // 「被控/连电脑」功能开关：暂时关闭
+
+    fun remoteHost(c: Context) = sp(c).getString("remoteHost", "") ?: ""
+    fun remotePin(c: Context) = sp(c).getString("remotePin", "") ?: ""
+    fun remoteOn(c: Context) = if (!Features.REMOTE) false else sp(c).getBoolean("remoteOn", false)
+    fun setRemote(c: Context, host: String, pin: String, on: Boolean) {
+        val enabled = on && Features.REMOTE
+        sp(c).edit().putString("remoteHost", host).putString("remotePin", pin)
+            .putBoolean("remoteOn", enabled).apply()
+    }
+
     fun clearToken(c: Context) {
         sp(c).edit().remove("token").remove("tokenUser").remove("role").apply()
     }
