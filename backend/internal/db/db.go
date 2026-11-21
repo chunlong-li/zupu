@@ -516,7 +516,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_max_tokens', '2048');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_timeout_sec', '180');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_path', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('biography_criteria', '');
-INSERT OR REPLACE INTO settings (key, value) VALUES ('version', '1.4.0.1121.2');
+INSERT OR REPLACE INTO settings (key, value) VALUES ('version', '1.4.1');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('deployed_at', CAST(strftime('%s','now') AS TEXT));
 INSERT OR IGNORE INTO settings (key, value) VALUES ('account_enabled', '0');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('account_submitters', '[]');
@@ -539,6 +539,11 @@ CREATE INDEX IF NOT EXISTS idx_spouse_bio_entries_spouse ON spouse_bio_entries (
 
 	// 安全迁移：给旧表添加新列（忽略已存在的列）
 	alterStatements := []string{
+		`ALTER TABLE spouses ADD COLUMN zi VARCHAR(32) DEFAULT ''`,
+		`ALTER TABLE spouses ADD COLUMN hao VARCHAR(32) DEFAULT ''`,
+		`ALTER TABLE spouses ADD COLUMN native_place VARCHAR(128) DEFAULT ''`,
+		`ALTER TABLE spouses ADD COLUMN current_place VARCHAR(128) DEFAULT ''`,
+		`ALTER TABLE spouses ADD COLUMN burial_place VARCHAR(128) DEFAULT ''`,
 		`ALTER TABLE members ADD COLUMN surname VARCHAR(16) DEFAULT ''`,
 		`ALTER TABLE members ADD COLUMN given_name VARCHAR(64) DEFAULT ''`,
 		`ALTER TABLE members ADD COLUMN birth_era VARCHAR(32) DEFAULT ''`,

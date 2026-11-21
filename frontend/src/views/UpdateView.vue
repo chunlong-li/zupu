@@ -161,6 +161,31 @@
     <el-card class="section update-log">
       <template #header><span>版本更新日志</span></template>
       <el-collapse v-model="activeLogs">
+                                      <el-collapse-item name="logStable141">
+            <template #title>
+              <span class="log-title">v1.4.1</span>
+              <span class="log-count">2026-11-21 发布</span>
+            </template>
+            <div class="log-entry">
+              <div class="log-entry-head">
+                <span class="log-ver">v1.4.1</span>
+                <span class="log-date">2026-11-21</span>
+              </div>
+              <div class="log-entry-body">
+                <p><b>成员与配偶资料</b></p>
+                <p>· 成员资料新增「生肖」，按农历精确换算（春节前出生算上一年），显示在「性别」下方。</p>
+                <p>· 配偶资料类目与成员对齐：新增「字 / 号 / 籍贯 / 现居地 / 葬地」，可查看也可编辑；配偶详情同样显示生肖。</p>
+                <p>· 修复：编辑弹窗点「取消」关不掉；手机端资料头部的按钮挤成一列、姓名竖排。</p>
+                <p><b>传统日程</b></p>
+                <p>· 新增「补充通用节日」：一次补齐春节、除夕、元宵、龙抬头、清明、端午、七夕、中元、中秋、重阳、寒衣、下元、腊八、小年（已有的自动跳过）。</p>
+                <p>· 除夕、清明自动按农历/节气算出当年日期，不用再手填；排序修正（除夕排在腊月最末）。</p>
+                <p>· 「不固定」节日的临时日期改为选农历月/日（可勾闰月），保存时自动换算成公历。</p>
+                <p><b>在线更新</b></p>
+                <p>· 自建更新源全部连不上时，自动改用 GitHub Release 兜底检查正式版。</p>
+                <p>· 「赞助作者」弹窗改为登录后才判断（未登录、登录页不再弹）。</p>
+              </div>
+            </div>
+          </el-collapse-item>
                                       <el-collapse-item name="logStable140">
             <template #title>
               <span class="log-title">v1.4.0</span>
@@ -2042,7 +2067,7 @@ function compareVersion(a, b) {
 onMounted(async () => {
   try {
     const { data } = await api.get('/settings/version')
-    currentVersion.value = data.version || '1.4.0.1121.2'
+    currentVersion.value = data.version || '1.4.1'
   } catch (e) { /* ignore */ }
   checkManifestUpdate() // 打开页面自动检查一次更新
 })

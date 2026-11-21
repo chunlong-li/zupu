@@ -29,6 +29,12 @@ type Spouse struct {
 	DeathLunar     string `json:"death_lunar"`
 	DeathGanzhi    string `json:"death_ganzhi"`
 	DeathEra       string `json:"death_era"`
+	Zi             string `json:"zi"`
+	Hao            string `json:"hao"`
+	NativePlace    string `json:"native_place"`
+	CurrentPlace   string `json:"current_place"`
+	BurialPlace    string `json:"burial_place"`
+	Zodiac         string `json:"zodiac"` // 生肖（按生年，农历精确）
 	Occupation     string `json:"occupation"`
 	Education      string `json:"education"`
 	Biography      string `json:"biography"`
@@ -57,9 +63,11 @@ func scanSpouses(rows *sql.Rows, encKey, role string) ([]Spouse, error) {
 			&s.BirthCalendar, &s.BirthGregorian, &s.BirthLunar, &s.BirthGanzhi, &s.BirthEra,
 			&s.DeathGregorian, &s.DeathLunar, &s.DeathGanzhi, &s.DeathEra,
 			&s.Occupation, &s.Education, &s.Biography, &s.Remark, &s.Portrait,
-			&s.Phone, &s.DNAHaploid, &s.DNADiploid, &s.DNAMito); err != nil {
+			&s.Phone, &s.DNAHaploid, &s.DNADiploid, &s.DNAMito,
+			&s.Zi, &s.Hao, &s.NativePlace, &s.CurrentPlace, &s.BurialPlace); err != nil {
 			return nil, err
 		}
+		s.Zodiac = zodiacOf(s.BirthGregorian, s.BirthLunar)
 		_ = s.DecryptSensitive(encKey)
 		sanitizeSpouseByRole(&s, role)
 		list = append(list, s)
@@ -73,7 +81,7 @@ func (h *SpouseHandler) ListByMember(c *gin.Context) {
 	memberID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	rows, err := h.DB.Query(`SELECT id, member_id, surname, given_name, name, type, family,
 		birth_calendar, birth_gregorian, birth_lunar, birth_ganzhi, birth_era,
-		death_gregorian, death_lunar, death_ganzhi, death_era, COALESCE(occupation,''), COALESCE(education,''), COALESCE(biography,''), COALESCE(remark,''), COALESCE(portrait,''), COALESCE(phone,''), COALESCE(dna_haploid,''), COALESCE(dna_diploid,''), COALESCE(dna_mito,'')
+		death_gregorian, death_lunar, death_ganzhi, death_era, COALESCE(occupation,''), COALESCE(education,''), COALESCE(biography,''), COALESCE(remark,''), COALESCE(portrait,''), COALESCE(phone,''), COALESCE(dna_haploid,''), COALESCE(dna_diploid,''), COALESCE(dna_mito,''), COALESCE(zi,''), COALESCE(hao,''), COALESCE(native_place,''), COALESCE(current_place,''), COALESCE(burial_place,'')
 		FROM spouses WHERE member_id = ? ORDER BY
 		CASE type WHEN '正配' THEN 1 WHEN '继配' THEN 2 WHEN '侧室' THEN 3 ELSE 4 END, id`, memberID)
 	if err != nil {
@@ -93,7 +101,7 @@ func (h *SpouseHandler) ListByMember(c *gin.Context) {
 func (h *SpouseHandler) GetAll(c *gin.Context) {
 	rows, err := h.DB.Query(`SELECT id, member_id, surname, given_name, name, type, family,
 		birth_calendar, birth_gregorian, birth_lunar, birth_ganzhi, birth_era,
-		death_gregorian, death_lunar, death_ganzhi, death_era, COALESCE(occupation,''), COALESCE(education,''), COALESCE(biography,''), COALESCE(remark,''), COALESCE(portrait,''), COALESCE(phone,''), COALESCE(dna_haploid,''), COALESCE(dna_diploid,''), COALESCE(dna_mito,'')
+		death_gregorian, death_lunar, death_ganzhi, death_era, COALESCE(occupation,''), COALESCE(education,''), COALESCE(biography,''), COALESCE(remark,''), COALESCE(portrait,''), COALESCE(phone,''), COALESCE(dna_haploid,''), COALESCE(dna_diploid,''), COALESCE(dna_mito,''), COALESCE(zi,''), COALESCE(hao,''), COALESCE(native_place,''), COALESCE(current_place,''), COALESCE(burial_place,'')
 		FROM spouses ORDER BY id`)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -113,16 +121,18 @@ func (h *SpouseHandler) Get(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	row := h.DB.QueryRow(`SELECT id, member_id, surname, given_name, name, type, family,
 		birth_calendar, birth_gregorian, birth_lunar, birth_ganzhi, birth_era,
-		death_gregorian, death_lunar, death_ganzhi, death_era, COALESCE(occupation,''), COALESCE(education,''), COALESCE(biography,''), COALESCE(remark,''), COALESCE(portrait,''), COALESCE(phone,''), COALESCE(dna_haploid,''), COALESCE(dna_diploid,''), COALESCE(dna_mito,'')
+		death_gregorian, death_lunar, death_ganzhi, death_era, COALESCE(occupation,''), COALESCE(education,''), COALESCE(biography,''), COALESCE(remark,''), COALESCE(portrait,''), COALESCE(phone,''), COALESCE(dna_haploid,''), COALESCE(dna_diploid,''), COALESCE(dna_mito,''), COALESCE(zi,''), COALESCE(hao,''), COALESCE(native_place,''), COALESCE(current_place,''), COALESCE(burial_place,'')
 		FROM spouses WHERE id = ?`, id)
 	var s Spouse
 	if err := row.Scan(&s.ID, &s.MemberID, &s.Surname, &s.GivenName, &s.Name, &s.Type, &s.Family,
 		&s.BirthCalendar, &s.BirthGregorian, &s.BirthLunar, &s.BirthGanzhi, &s.BirthEra,
 		&s.DeathGregorian, &s.DeathLunar, &s.DeathGanzhi, &s.DeathEra,
-		&s.Occupation, &s.Education, &s.Biography, &s.Remark, &s.Portrait, &s.Phone, &s.DNAHaploid, &s.DNADiploid, &s.DNAMito); err != nil {
+		&s.Occupation, &s.Education, &s.Biography, &s.Remark, &s.Portrait, &s.Phone, &s.DNAHaploid, &s.DNADiploid, &s.DNAMito,
+		&s.Zi, &s.Hao, &s.NativePlace, &s.CurrentPlace, &s.BurialPlace); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "未找到该配偶"})
 		return
 	}
+	s.Zodiac = zodiacOf(s.BirthGregorian, s.BirthLunar)
 	_ = s.DecryptSensitive(h.EncKey)
 	sanitizeSpouseByRole(&s, c.GetString("role"))
 	c.JSON(http.StatusOK, s)
@@ -167,11 +177,13 @@ func (h *SpouseHandler) applyCreate(s *Spouse, changedBy int, changedByName stri
 	}
 	res, err := h.DB.Exec(`INSERT INTO spouses (member_id, surname, given_name, name, type, family,
 		birth_calendar, birth_gregorian, birth_lunar, birth_ganzhi, birth_era,
-		death_gregorian, death_lunar, death_ganzhi, death_era, occupation, education, biography, remark, portrait, phone, dna_haploid, dna_diploid, dna_mito)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		death_gregorian, death_lunar, death_ganzhi, death_era, occupation, education, biography, remark, portrait, phone, dna_haploid, dna_diploid, dna_mito,
+		zi, hao, native_place, current_place, burial_place)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		s.MemberID, s.Surname, s.GivenName, s.Name, s.Type, s.Family,
 		s.BirthCalendar, s.BirthGregorian, s.BirthLunar, s.BirthGanzhi, s.BirthEra,
-		s.DeathGregorian, s.DeathLunar, s.DeathGanzhi, s.DeathEra, s.Occupation, s.Education, s.Biography, s.Remark, s.Portrait, s.Phone, s.DNAHaploid, s.DNADiploid, s.DNAMito)
+		s.DeathGregorian, s.DeathLunar, s.DeathGanzhi, s.DeathEra, s.Occupation, s.Education, s.Biography, s.Remark, s.Portrait, s.Phone, s.DNAHaploid, s.DNADiploid, s.DNAMito,
+		s.Zi, s.Hao, s.NativePlace, s.CurrentPlace, s.BurialPlace)
 	if err != nil {
 		return nil, err
 	}
@@ -197,11 +209,13 @@ func (h *SpouseHandler) Update(c *gin.Context) {
 	}
 	// DNA：仅超级管理员/理事长可改，其余角色保持库中原值（手机号理事及以上可改）
 	if r := c.GetString("role"); r != RoleSuperAdmin && r != RoleChief {
-		var e1, e2, e3 string
-		if err := h.DB.QueryRow(`SELECT COALESCE(dna_haploid,''), COALESCE(dna_diploid,''), COALESCE(dna_mito,'') FROM spouses WHERE id = ?`, id).Scan(&e1, &e2, &e3); err == nil {
+		var e1, e2, e3, z1, z2, z3, z4, z5 string
+		if err := h.DB.QueryRow(`SELECT COALESCE(dna_haploid,''), COALESCE(dna_diploid,''), COALESCE(dna_mito,''), COALESCE(zi,''), COALESCE(hao,''), COALESCE(native_place,''), COALESCE(current_place,''), COALESCE(burial_place,'') FROM spouses WHERE id = ?`, id).
+			Scan(&e1, &e2, &e3, &z1, &z2, &z3, &z4, &z5); err == nil {
 			s.DNAHaploid = DecryptValue(e1, h.EncKey)
 			s.DNADiploid = DecryptValue(e2, h.EncKey)
 			s.DNAMito = DecryptValue(e3, h.EncKey)
+			s.Zi, s.Hao, s.NativePlace, s.CurrentPlace, s.BurialPlace = z1, z2, z3, z4, z5
 		}
 	}
 	// 理事提交 → 进入审核队列
@@ -233,11 +247,13 @@ func (h *SpouseHandler) applyUpdate(id int64, s *Spouse, changedBy int, changedB
 	}
 	_, err := h.DB.Exec(`UPDATE spouses SET surname=?, given_name=?, name=?, type=?, family=?,
 		birth_calendar=?, birth_gregorian=?, birth_lunar=?, birth_ganzhi=?, birth_era=?,
-		death_gregorian=?, death_lunar=?, death_ganzhi=?, death_era=?, occupation=?, education=?, biography=?, remark=?, portrait=?, phone=?, dna_haploid=?, dna_diploid=?, dna_mito=?
+		death_gregorian=?, death_lunar=?, death_ganzhi=?, death_era=?, occupation=?, education=?, biography=?, remark=?, portrait=?, phone=?, dna_haploid=?, dna_diploid=?, dna_mito=?,
+		zi=?, hao=?, native_place=?, current_place=?, burial_place=?
 		WHERE id=?`,
 		s.Surname, s.GivenName, s.Name, s.Type, s.Family,
 		s.BirthCalendar, s.BirthGregorian, s.BirthLunar, s.BirthGanzhi, s.BirthEra,
-		s.DeathGregorian, s.DeathLunar, s.DeathGanzhi, s.DeathEra, s.Occupation, s.Education, s.Biography, s.Remark, s.Portrait, s.Phone, s.DNAHaploid, s.DNADiploid, s.DNAMito, id)
+		s.DeathGregorian, s.DeathLunar, s.DeathGanzhi, s.DeathEra, s.Occupation, s.Education, s.Biography, s.Remark, s.Portrait, s.Phone, s.DNAHaploid, s.DNADiploid, s.DNAMito,
+		s.Zi, s.Hao, s.NativePlace, s.CurrentPlace, s.BurialPlace, id)
 	if err != nil {
 		return err
 	}

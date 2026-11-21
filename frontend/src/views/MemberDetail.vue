@@ -39,6 +39,7 @@
             <div class="info-item"><span class="label">排行</span><span>{{ member.rank || '—' }}</span></div>
             <div class="info-item"><span class="label">房支</span><span>{{ branchName(member.branch_id) || member.branch || '—' }}</span></div>
             <div class="info-item"><span class="label">性别</span><span>{{ member.gender === 1 ? '男' : '女' }}</span></div>
+            <div class="info-item" v-if="member.zodiac"><span class="label">生肖</span><span>{{ member.zodiac }}</span></div>
             <div class="info-item"><span class="label">宗法类型</span><span>{{ member.clan_type }}</span></div>
             <div class="info-item"><span class="label">族谱分类</span><span>{{ member.record_type || '内纪' }}</span></div>
             <div class="info-item" v-for="a in (member.adoptions || [])" :key="'ad'+a.id">
@@ -60,7 +61,6 @@
             <div class="info-item"><span class="label">学历</span><span>{{ member.education || '—' }}</span></div>
             <div class="info-item"><span class="label">生卒</span><span>{{ lifeDatesText }}</span></div>
             <div class="info-item" v-if="member.lifespan"><span class="label">享年</span><span>{{ member.lifespan }} 岁</span></div>
-            <div class="info-item" v-if="member.zodiac"><span class="label">生肖</span><span>{{ member.zodiac }}</span></div>
             <div class="info-item" v-if="calcAges()"><span class="label">年龄</span><span>{{ calcAges() }}</span></div>
             <div class="info-item"><span class="label">葬地</span><span>{{ member.burial_place || '—' }}</span></div>
             <div class="info-item" v-if="member.married_out"><span class="label">出嫁</span><span>{{ member.married_out }}</span></div>
@@ -1508,7 +1508,13 @@ onMounted(async () => {
 
 <style scoped>
 .section { margin-bottom: 16px; }
-.card-header { display: flex; align-items: center; justify-content: space-between; }
+.card-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 767px) {
+  .card-header { flex-wrap: wrap; gap: 6px 8px; }
+  .header-left { flex-wrap: wrap; gap: 8px; }
+  .card-header .serif { font-size: 18px; white-space: nowrap; }   /* 名字不竖排 */
+  .flag-label { font-size: 12px; }
+}
 .header-left { display: flex; align-items: center; gap: 12px; }
 .card-header .serif { font-size: 20px; font-family: "Songti SC", "SimSun", serif; }
 .flag-group { display: inline-flex; align-items: center; gap: 6px; margin-right: 8px; cursor: default; }

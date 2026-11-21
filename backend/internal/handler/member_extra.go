@@ -112,6 +112,9 @@ func (h *MemberHandler) GetWithSpouses(c *gin.Context) {
 		return
 	}
 
+	// 生肖：详情页用的是这个接口（/members/:id/detail），和 Get 一样在这里算
+	m.Zodiac = zodiacOf(m.BirthGregorian, m.BirthLunar)
+
 	// 过继/收养关系（嗣父/养父，可多个）——详情页的编辑框和展示都靠它
 	m.Adoptions = loadAdoptions(h.DB, m.ID)
 	m.fillAdoptFather()

@@ -98,7 +98,7 @@
         <el-form-item label="葬地"><el-input v-model="editForm.burial_place" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="editVisible = false">取消</el-button>
+        <el-button @click="emit('update:modelValue', false)">取消</el-button>
         <el-button type="primary" @click="saveMember">保存</el-button>
       </template>
     </el-dialog>

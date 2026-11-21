@@ -22,6 +22,10 @@
             <div class="info-item"><span class="label">所属</span><span class="clickable" @click="goMember">{{ memberName }}</span></div>
             <div class="info-item"><span class="label">类型</span><span>{{ spouse.type }}</span></div>
             <div class="info-item"><span class="label">家世</span><span>{{ spouse.family || '—' }}</span></div>
+            <div class="info-item"><span class="label">字</span><span>{{ spouse.zi || '—' }}</span></div>
+            <div class="info-item"><span class="label">号</span><span>{{ spouse.hao || '—' }}</span></div>
+            <div class="info-item"><span class="label">性别</span><span>{{ spouseGender }}</span></div>
+            <div class="info-item" v-if="spouse.zodiac"><span class="label">生肖</span><span>{{ spouse.zodiac }}</span></div>
             <div class="info-item"><span class="label">生卒</span><span>{{ formatLifeDates(spouse) }}</span></div>
             <div class="info-item" v-if="calcAges()"><span class="label">年龄</span><span>{{ calcAges() }}</span></div>
             <div class="info-item" v-if="spouse.occupation"><span class="label">职业</span><span>{{ spouse.occupation }}</span></div>
@@ -30,6 +34,9 @@
             <div class="info-item" v-if="spouse.dna_haploid"><span class="label">单倍体</span><span>{{ spouse.dna_haploid }}</span></div>
             <div class="info-item" v-if="spouse.dna_diploid"><span class="label">二倍体</span><span>{{ spouse.dna_diploid }}</span></div>
             <div class="info-item" v-if="spouse.dna_mito"><span class="label">线粒体</span><span>{{ spouse.dna_mito }}</span></div>
+            <div class="info-item"><span class="label">籍贯</span><span>{{ spouse.native_place || '—' }}</span></div>
+            <div class="info-item"><span class="label">现居地</span><span>{{ spouse.current_place || '—' }}</span></div>
+            <div class="info-item"><span class="label">葬地</span><span>{{ spouse.burial_place || '—' }}</span></div>
             <div class="info-item"><span class="label">备注</span><span>{{ spouse.remark || '—' }}</span></div>
           </div>
 
@@ -141,6 +148,13 @@
         <el-row :gutter="12" v-if="canViewDNA()">
           <el-col :span="24"><el-form-item label="线粒体"><el-input v-model="editForm.dna_mito" placeholder="线粒体DNA编码" /></el-form-item></el-col>
         </el-row>
+        <el-row :gutter="12">
+          <el-col :span="12"><el-form-item label="字"><el-input v-model="editForm.zi" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="号"><el-input v-model="editForm.hao" /></el-form-item></el-col>
+        </el-row>
+        <el-form-item label="籍贯"><el-input v-model="editForm.native_place" /></el-form-item>
+        <el-form-item label="现居地"><el-input v-model="editForm.current_place" /></el-form-item>
+        <el-form-item label="葬地"><el-input v-model="editForm.burial_place" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="editForm.remark" placeholder="例如：原配早逝，继配于某年续弦" /></el-form-item>
       </el-form>
       <template #footer>
@@ -465,6 +479,8 @@ function calcAges() {
 }
 
 function openEdit() {
+  // 先清空：新字段（字/号/籍贯等）没有值时不会残留上一个配偶的内容
+  Object.keys(editForm).forEach(k => delete editForm[k])
   const copy = JSON.parse(JSON.stringify(spouse))
   copy.birth_calendar = copy.birth_calendar || 'solar'
   copy.birth_date = copy.birth_date || copy.birth_gregorian || ''
